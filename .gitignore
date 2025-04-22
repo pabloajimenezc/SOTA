@@ -1,6 +1,6 @@
 /.venv/
 /notebooks/__pycache__
-/notebooks/xploreapi.py
+/xploreapi/
 /notebooks/private_constants.py
 /data/
 /models/
