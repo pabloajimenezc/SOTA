@@ -1,6 +1,17 @@
+# Ignore all
+*
+
+# Keep folder structure
+!*/
+
+# Ignore specific folders
 /.venv/
-/notebooks/__pycache__
-/xploreapi/
+*/__pycache__
+
+# Keep scripts
+!*.py
+!*.ipynb
+
+# Ignore specific scripts
+/xploreapi/xploreapi.py
 /notebooks/private_constants.py
-/data/
-/models/

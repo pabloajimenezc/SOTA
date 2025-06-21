@@ -22,7 +22,7 @@ def find_project_root():
     return Path(__file__).resolve().parent
 
 def create_venv(venv_path):
-    print(f'Creando entorno virtual en: {venv_path}')
+    print(f'Creating virtual environement in: {venv_path}')
     subprocess.run([sys.executable, '-m', 'venv', str(venv_path)])
     return venv_path
 
@@ -31,19 +31,19 @@ script_dir = Path(__file__).resolve().parent
 venv = find_existing_venv(script_dir)
 
 if venv:
-    print(f'Entorno virtual encontrado en: {venv}')
+    print(f'Virtual environement found in: {venv}')
 else:
     project_root = find_project_root()
     venv = project_root / '.venv'
     venv = create_venv(venv)
 
-# 2. Detectar ejecutable de Python dentro del venv
+# 2. Detect Python executable inside the venv
 python_exec = (
     venv / 'Scripts' / 'python.exe' if os.name == 'nt'
     else venv / 'bin' / 'python'
 )
 
-# 3. Instalar paquetes
+# 3. Install packages
 libraries = [
     'Levenshtein',
     'certifi',
@@ -68,17 +68,17 @@ libraries = [
     'numpy==1.26.4'
 ]
 
-print(f'Instalando {len(libraries)} paquetes...')
+print(f'Installing {len(libraries)} packages...')
 for package in libraries:
     subprocess.check_call([str(python_exec), '-m', 'pip', 'install', package])
 
-# 4. Descargar recursos
+# 4. Download resources
 subprocess.run([str(python_exec), '-m', 'spacy', 'download', 'en_core_web_sm'])
 subprocess.run([str(python_exec), '-c', 'import nltk; nltk.download("punkt"); nltk.download("punkt_tab"); nltk.download("wordnet"); nltk.download("stopwords")'])
 
-# 5. Guardar requirements.txt
+# 5. Save requirements.txt
 project_root = find_project_root()
 req_file = project_root / 'requirements.txt'
-print(f'Guardando dependencias en: {req_file}')
+print(f'Saving dependencies in: {req_file}')
 with open(req_file, 'w') as file:
     subprocess.run([str(python_exec), '-m', 'pip', 'freeze'], stdout=file)
