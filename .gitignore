@@ -3,6 +3,7 @@
 
 # Keep folder structure
 !*/
+!/references
 
 # Ignore specific folders
 /.venv/
@@ -17,6 +18,3 @@
 # Ignore specific scripts
 /xploreapi/xploreapi.py
 /notebooks/private_constants.py
-
-# Keep specific documents
-!*.pdf

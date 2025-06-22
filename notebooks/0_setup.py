@@ -44,28 +44,41 @@ python_exec = (
 )
 
 # 3. Install packages
+# libraries = [
+#     'Levenshtein',
+#     'certifi',
+#     'fastcluster',
+#     'gensim',
+#     'graphviz',
+#     'ipywidgets',
+#     'jupyter',
+#     'kaleido',
+#     'nbformat',
+#     'networkx',
+#     'nltk',
+#     'plotly',
+#     'pyDOE',
+#     'pycurl',
+#     'pydot',
+#     'seaborn',
+#     'spacy',
+#     'umap-learn',
+#     'wordcloud',
+#     'yellowbrick',
+#     'numpy==1.26.4'
+# ]
+
 libraries = [
-    'Levenshtein',
-    'certifi',
-    'fastcluster',
-    'gensim',
-    'graphviz',
-    'ipywidgets',
-    'jupyter',
-    'kaleido',
-    'nbformat',
-    'networkx',
-    'nltk',
-    'plotly',
-    'pyDOE',
-    'pycurl',
-    'pydot',
-    'seaborn',
-    'spacy',
-    'umap-learn',
-    'wordcloud',
-    'yellowbrick',
-    'numpy==1.26.4'
+    'ipykernel'
+    'pandas'
+    'matplotlib'
+    'pycurl'
+    'certifi'
+    'joblib'
+    'levenshtein'
+    'nltk'
+    'scikit-learn'
+    'wordcloud'
 ]
 
 print(f'Installing {len(libraries)} packages...')
