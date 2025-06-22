@@ -2,8 +2,7 @@
 *
 
 # Keep folder structure
-!*/
-!/references
+!**/
 
 # Ignore specific folders
 /.venv/
