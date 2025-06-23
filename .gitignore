@@ -5,6 +5,9 @@
 !*/
 !**/
 
+# Keep specific folders
+!references/**
+
 # Ignore specific folders
 /.venv/
 */__pycache__
@@ -13,6 +16,7 @@
 !*.py
 !*.ipynb
 !.gitignore
+!.gitkeep
 !requirements.txt
 
 # Ignore specific scripts
