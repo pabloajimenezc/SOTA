@@ -1,0 +1,23 @@
+# Ignore all
+*
+
+# Keep folder structure
+!*/
+
+# Keep specific folders
+!references/**
+
+# Ignore specific folders
+/.venv/
+*/__pycache__
+
+# Keep specific scripts
+!*.py
+!*.ipynb
+!.gitignore
+!.gitkeep
+!requirements.txt
+
+# Ignore specific scripts
+/xploreapi/xploreapi.py
+/notebooks/private_constants.py
