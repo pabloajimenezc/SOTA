@@ -15,6 +15,12 @@ clusters con reglas reutilizables y visualización interactiva.
    búsqueda semántica con perfil por tópicos, términos emergentes, autores, fuentes y países, y descarga
    del CSV con tópicos.
 
+4. **SOTA publicados**: desde la página de inicio cualquiera puede *Revisar otros SOTA* sin API key. Quien
+   tiene sesión puede publicar el suyo desde *Explorar → Publicar*. Se guardan los artículos limpios, el mapa,
+   la regla y el número de tópicos en un Parquet comprimido (~5 MB por cada 10k artículos) en la rama
+   `sotas` del repo (`index.json` + `sotas/<nombre>.parquet`). Solo la misma API key puede volver a
+   publicar con un nombre ya usado.
+
 ## Seguridad de la API key
 
 - Cada usuario ingresa **su propia** key de [developer.ieee.org](https://developer.ieee.org).
@@ -37,6 +43,18 @@ python -m venv .venv
 2. Entra a [share.streamlit.io](https://share.streamlit.io) con tu cuenta de GitHub → **Create app** →
    elige el repo, rama `main` y archivo `streamlit_app.py`.
 3. Listo: obtendrás una URL `https://<nombre>.streamlit.app` accesible desde cualquier dispositivo.
+4. Para habilitar **Publicar**: crea un token *fine-grained* en GitHub (Settings → Developer settings →
+   Personal access tokens) con acceso solo a este repo y permiso *Contents: Read and write*. Después,
+   en la app de Streamlit Cloud ve a **Settings → Secrets** y pega:
+
+   ```toml
+   [github]
+   repo = "pabloajimenezc/SOTA"
+   branch = "sotas"
+   token = "github_pat_..."
+   ```
+
+   Sin token, la galería funciona igual en modo solo lectura (si el repo es público).
 
 Límites del plan gratis: ~1 GB de RAM (suficiente para ~20k artículos) y la app se duerme tras unos días sin
 uso (se despierta en ~30 s al abrirla).
@@ -51,6 +69,7 @@ sota/
   data.py               normalización de API/CSV a las columnas del proyecto, deduplicación
   text.py               preprocesamiento, TF-IDF + LSA, clusters, búsqueda semántica, UMAP
   cleaning.py           reglas de limpieza (JSON)
+  store.py              SOTA publicados (Parquet + index.json en la rama `sotas`)
   viz.py                gráficos Plotly
 rules/                  reglas de ejemplo
 tests/                  tests (sin llamadas reales a la API)

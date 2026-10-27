@@ -11,6 +11,9 @@ import streamlit as st
 from sota import cleaning, text
 from sota.cleaning import Rules
 from sota.ieee import IEEEClient
+from sota.store import GitHubStore
+
+DEFAULT_REPO = "pabloajimenezc/SOTA"
 
 
 def client() -> IEEEClient:
@@ -22,7 +25,28 @@ def rules() -> Rules:
     return st.session_state.setdefault("rules", Rules())
 
 
+@st.cache_resource
+def store() -> GitHubStore:
+    """Published SOTAs. Configure [github] repo/branch/token in .streamlit/secrets.toml to enable publishing."""
+    try:
+        gh = dict(st.secrets.get("github", {}))
+    except Exception:  # no secrets file (local run): read-only from the public repo
+        gh = {}
+    return GitHubStore(gh.get("repo", DEFAULT_REPO), gh.get("branch", "sotas"), gh.get("token"))
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def sota_index() -> list[dict]:
+    return store().index()
+
+
+@st.cache_data(ttl=3 * 3600, max_entries=4, show_spinner="Cargando SOTA…")
+def sota_load(slug: str, version: str) -> pd.DataFrame:
+    return store().load(slug)
+
+
 def set_raw(df: pd.DataFrame) -> None:
+    st.session_state.pop("sota_meta", None)  # own data from now on
     st.session_state.raw = df
     st.session_state.raw_key = hashlib.md5(pd.util.hash_pandas_object(df["id"], index=False).values).hexdigest()
 
@@ -30,8 +54,10 @@ def set_raw(df: pd.DataFrame) -> None:
 def require_raw() -> pd.DataFrame:
     raw = st.session_state.get("raw")
     if raw is None or raw.empty:
-        st.info("Primero carga artículos en **1 · Buscar**.")
-        st.page_link("app_pages/search.py", label="Ir a Buscar", icon="🔎")
+        st.info("Primero carga artículos en **1 · Buscar** o abre un SOTA publicado.")
+        if "api_key" in st.session_state:
+            st.page_link("app_pages/search.py", label="Ir a Buscar", icon="🔎")
+        st.page_link("app_pages/gallery.py", label="Ver SOTA publicados", icon="📚")
         st.stop()
     return raw
 

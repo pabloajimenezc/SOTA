@@ -1,12 +1,20 @@
+from dataclasses import asdict
+
 import numpy as np
 import pandas as pd
 import streamlit as st
 
-from app_pages.shared import clusters, csv_bytes, reasons, require_raw, subset_key, vectors
+from app_pages.shared import (clusters, csv_bytes, reasons, require_raw, rules, sota_index, store, subset_key,
+                               vectors)
 from sota import data, text, viz
+from sota.store import StoreError, make_meta, owner_id
 
-st.header("3 · Explorar el estado del arte")
+st.header("Explorar el estado del arte")
 raw = require_raw()
+meta = st.session_state.get("sota_meta")
+if meta:
+    st.info(f"📚 **{meta['name']}** — {meta.get('description', '')}  \n"
+            f"Publicado por {meta.get('author') or 'anónimo'} el {meta.get('created', '?')}.")
 kept = (reasons(raw) == "").to_numpy()
 df = raw[kept].reset_index(drop=True)
 if len(df) < 10:
@@ -23,9 +31,16 @@ def project(_Z, key):
     return text.project_2d(_Z)
 
 
+def map_xy():
+    """Saved map for published SOTAs, otherwise computed (and cached)."""
+    if {"x", "y"} <= set(df.columns) and df[["x", "y"]].notna().all().all():
+        return df[["x", "y"]].to_numpy(), "UMAP"
+    return project(v.Z, key)
+
+
 with st.sidebar:
     st.subheader("Tópicos y filtros")
-    k = st.slider("Número de tópicos", 2, 40, text.suggest_k(len(df)))
+    k = st.slider("Número de tópicos", 2, 40, meta["k"] if meta else text.suggest_k(len(df)))
     years = df["publication_year"].dropna().astype(int)
     yr = st.slider("Años", int(years.min()), int(years.max()), (int(years.min()), int(years.max())))
     df["tipo"] = data.doc_type(df)
@@ -85,7 +100,7 @@ elif sec == "Tópicos":
 elif sec == "Mapa":
     st.caption("Cada punto es un artículo; cercanía = similitud de contenido. Tamaño = citas. "
                "Selecciona puntos (lazo/caja) para listarlos.")
-    xy, method = project(v.Z, key)
+    xy, method = map_xy()
     color_by = st.radio("Color", ["tópico", "tipo", "década"], horizontal=True)
     col = (df["publication_year"] // 10 * 10).astype(str) if color_by == "década" else df[color_by]
     ev = st.plotly_chart(viz.topic_map(d, xy[f], col[f], f"Mapa de artículos ({method})"),
@@ -135,3 +150,29 @@ elif sec == "Términos":
 elif sec == "Datos":
     st.dataframe(d.drop(columns=["id"]), hide_index=True, height=500)
     st.download_button("⬇️ Descargar (.csv con tópicos)", csv_bytes(d), "sota_topics.csv", "text/csv")
+
+if st.session_state.get("api_key"):
+    st.divider()
+    with st.expander("📤 Publicar este SOTA para que cualquiera pueda verlo"):
+        if not store().writable:
+            st.caption("La publicación no está configurada en este servidor (falta el token de GitHub en *secrets*).")
+        else:
+            m0 = meta or {}
+            name = st.text_input("Nombre", m0.get("name", ""), placeholder="p. ej. Electromovilidad marítima")
+            desc = st.text_area("Descripción", m0.get("description", ""))
+            author = st.text_input("Autor(es)", m0.get("author", ""))
+            st.caption(f"Se guardan los {len(df):,} artículos limpios, el mapa, la regla de limpieza y el número de "
+                       "tópicos, en Parquet comprimido. Solo tu API key puede volver a publicar con este nombre.")
+            if st.button("Publicar", type="primary", disabled=not name.strip()):
+                xy, _ = map_xy()
+                out = df.assign(x=xy[:, 0], y=xy[:, 1])
+                m = make_meta(out, name, desc, author, owner_id(st.session_state.api_key), k, asdict(rules()))
+                try:
+                    with st.spinner("Publicando…"):
+                        store().save(out, m)
+                except StoreError as e:
+                    st.error(str(e))
+                else:
+                    sota_index.clear()
+                    st.session_state.sota_meta = m
+                    st.success(f"Publicado: **{m['name']}**. Ya aparece en *SOTA publicados*.")
