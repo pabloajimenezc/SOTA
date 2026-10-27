@@ -99,6 +99,7 @@ def test_from_api_maps_columns_and_dedupes():
     assert row["ieee_terms"] == "Marine vehicles; Batteries" and row["author_keywords"] == "ship"
     assert row["document_identifier"] == "IEEE Journals" and row["funding_information"] == "Unknown"
     assert data.doc_type(df).iloc[0] == "Journals"
+    assert df.loc[0, "html_url"] is None or str(df.loc[0, "html_url"]).startswith("https://")
 
 
 def test_from_csv_manual_export(tmp_path):
@@ -108,6 +109,7 @@ def test_from_csv_manual_export(tmp_path):
                   "Document Identifier": ["IEEE Conferences"]}).to_csv(p, index=False)
     df = data.from_csv([p])
     assert df.loc[0, "id"] == "123" and data.doc_type(df).iloc[0] == "Conferences"
+    assert df.loc[0, "html_url"] == "https://ieeexplore.ieee.org/document/123/"
 
 
 def test_rules_syntax_and_overrides():
@@ -133,7 +135,13 @@ def test_text_pipeline():
     labels = text.cluster(v.Z, 2)
     assert len(set(labels[::2])) == 1 and labels[0] != labels[1]
     summ = text.cluster_summary(v, labels, df)
-    assert set(summ["cluster"]) == {0, 1}
+    assert set(summ["cluster"]) == {1, 2}  # shown from 1
+    groups = text.split(v, np.arange(40))
+    assert sum(map(len, groups)) == 40 and len(groups) >= 2
+    leaf = np.arange(40)
+    while len(leaf) > 1:  # drill down always ends at a single doc
+        leaf = text.split(v, leaf)[0]
+    assert len(text.group_terms(v, groups)[0]) == 4
     sim = text.similar(v, ["electric ship"])
     assert np.argmax(sim[0]) % 2 == 0
     assert text.clean("Vessels and ships", {"vessel": "ship"}) == "ship ship"
