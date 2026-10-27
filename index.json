@@ -1,0 +1,111 @@
+[
+ {
+  "slug": "electromovilidad-maritima",
+  "name": "Electromovilidad marítima",
+  "description": "Barcos eléctricos, propulsión naval y electrificación de buques (IEEE Xplore).",
+  "author": "Pablo Jiménez",
+  "owner": "6d1cda77ef557db8",
+  "created": "2026-10-27",
+  "docs": 7835,
+  "years": [
+   1911,
+   2026
+  ],
+  "queries": [
+   "MarineElectromobility",
+   "ShipPropulsion"
+  ],
+  "k": 30,
+  "rules": {
+   "name": "electromovilidad_maritima",
+   "exclude_terms": [
+    "plasma*",
+    "biolog*",
+    "medical",
+    "biomedical",
+    "ophthalm*",
+    "ophtalm*",
+    "retina*",
+    "fetal",
+    "fetus",
+    "abdominal",
+    "heart",
+    "cardio*",
+    "*cardiograph*",
+    "blood",
+    "aneurysm*",
+    "surgery",
+    "surgical",
+    "arter*",
+    "zooplankton",
+    "phytoplankton",
+    "radar*",
+    "antenna*",
+    "*klystron*",
+    "atmospheric",
+    "perfusion",
+    "cancer*",
+    "nanobioscience",
+    "photodetector*",
+    "polarimetric",
+    "cathodic",
+    "ionospher*",
+    "quasioptical",
+    "quasi-optical",
+    "gyrotron*",
+    "cyclotron*",
+    "carm",
+    "scatter*"
+   ],
+   "require_terms": [
+    "motor*",
+    "propul*",
+    "drive*",
+    "fuel*",
+    "batter*",
+    "lithium",
+    "propeller*",
+    "diesel",
+    "gas",
+    "hybrid*",
+    "electric*",
+    "petrol"
+   ],
+   "exclude_ids": [],
+   "keep_ids": [],
+   "synonyms": {
+    "ocean": "sea",
+    "vessel": "ship"
+   },
+   "min_year": null
+  },
+  "bytes": 4645757
+ },
+ {
+  "slug": "modular-multilevel-cascaded-converters",
+  "name": "Modular multilevel cascaded converters",
+  "description": "Convertidores modulares multinivel en cascada: MMC, M3C, hexverter y su control (IEEE Xplore).",
+  "author": "Pablo Jiménez",
+  "owner": "6d1cda77ef557db8",
+  "created": "2026-10-27",
+  "docs": 12469,
+  "years": [
+   1995,
+   2026
+  ],
+  "queries": [
+   "MMC"
+  ],
+  "k": 30,
+  "rules": {
+   "name": "mmc",
+   "exclude_terms": [],
+   "require_terms": [],
+   "exclude_ids": [],
+   "keep_ids": [],
+   "synonyms": {},
+   "min_year": null
+  },
+  "bytes": 6344539
+ }
+]
