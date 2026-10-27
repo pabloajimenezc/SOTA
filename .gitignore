@@ -21,3 +21,9 @@
 # Ignore specific scripts
 /xploreapi/xploreapi.py
 /notebooks/private_constants.py
+# App
+!README.md
+!requirements*.txt
+!.streamlit/config.toml
+!rules/*.json
+/.streamlit/secrets.toml

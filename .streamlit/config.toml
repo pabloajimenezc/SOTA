@@ -1,0 +1,10 @@
+[client]
+# Hide tracebacks from users (they could include request data).
+showErrorDetails = false
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
+
+[server]
+maxUploadSize = 200

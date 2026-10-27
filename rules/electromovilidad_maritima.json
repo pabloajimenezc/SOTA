@@ -1,0 +1,18 @@
+{
+  "name": "electromovilidad_maritima",
+  "exclude_terms": [
+    "plasma*", "biolog*", "medical", "biomedical", "ophthalm*", "ophtalm*", "retina*", "fetal", "fetus",
+    "abdominal", "heart", "cardio*", "*cardiograph*", "blood", "aneurysm*", "surgery", "surgical",
+    "arter*", "zooplankton", "phytoplankton", "radar*", "antenna*", "*klystron*", "atmospheric",
+    "perfusion", "cancer*", "nanobioscience", "photodetector*", "polarimetric", "cathodic",
+    "ionospher*", "quasioptical", "quasi-optical", "gyrotron*", "cyclotron*", "carm", "scatter*"
+  ],
+  "require_terms": [
+    "motor*", "propul*", "drive*", "fuel*", "batter*", "lithium", "propeller*", "diesel", "gas",
+    "hybrid*", "electric*", "petrol"
+  ],
+  "exclude_ids": [],
+  "keep_ids": [],
+  "synonyms": {"ocean": "sea", "vessel": "ship"},
+  "min_year": null
+}
