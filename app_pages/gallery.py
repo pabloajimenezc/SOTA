@@ -21,7 +21,7 @@ def open_sota(m: dict) -> None:
     set_raw(df)
     st.session_state.rules = Rules.from_json(json.dumps(m.get("rules") or {}))
     st.session_state.sota_meta = m
-    st.session_state.explore_view = "Resumen"
+    st.session_state.k_topics = m.get("k", 10)
     st.switch_page("app_pages/explore.py")
 
 

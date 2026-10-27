@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 import streamlit as st
 
-from app_pages.shared import clusters, csv_bytes, reasons, require_raw, rules, subset_key, vectors
+from app_pages.shared import clusters, csv_bytes, reasons, require_raw, rules, sticky, subset_key, vectors
 from sota import cleaning, text
 from sota.cleaning import Rules
 
@@ -85,8 +85,8 @@ with st.expander("🔬 Probar un término antes de añadirlo"):
         if hit.any() and st.button("Añadir a términos excluidos"):
             act([("exclude_terms", [t.strip().lower()])], f"Añadido '{t}' ({hit.sum()} eliminados)")
 
-st.session_state.setdefault("clean_view", "Clusters")
-view = st.segmented_control("Vista", ["Clusters", "Revisión uno a uno", "Eliminados"], key="clean_view") or "Clusters"
+VIEWS = ["Clusters", "Revisión uno a uno", "Eliminados"]
+view = sticky(st.segmented_control, "Vista", "clean_view", VIEWS[0], options=VIEWS) or VIEWS[0]
 
 
 def term_picker(terms: list[str], wkey: str, scope=None) -> list[str]:
@@ -102,7 +102,7 @@ def term_picker(terms: list[str], wkey: str, scope=None) -> list[str]:
 if view == "Clusters":
     st.caption("Clusters ordenados del más **distinto** al resto (arriba suelen estar los temas ajenos, "
                "p. ej. medicina por *vessel*). Selecciona uno para inspeccionarlo.")
-    k = st.slider("Número de clusters", 2, 40, text.suggest_k(len(dk)))
+    k = sticky(st.slider, "Número de clusters", "k_clean", text.suggest_k(len(dk)), min_value=2, max_value=40)
     labels = clusters(v, key, k)
     summ = text.cluster_summary(v, labels, dk)
     sel = st.dataframe(summ, hide_index=True, on_select="rerun", selection_mode="single-row", key=f"summ{k}",
@@ -120,7 +120,7 @@ if view == "Clusters":
 
         def review_cluster(ids=dk.loc[m, "id"].tolist()):
             st.session_state.review_ids = ids
-            st.session_state.clean_view = "Revisión uno a uno"
+            st.session_state.clean_view = st.session_state._w_clean_view = "Revisión uno a uno"
 
         b3.button("🔍 Revisar uno a uno", on_click=review_cluster)
         st.dataframe(dk.loc[m, ["document_title", "publication_year", "publication_title", "ieee_terms"]],

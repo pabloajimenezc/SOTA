@@ -140,15 +140,36 @@ def similar(v: Vectors, queries: list[str]) -> np.ndarray:
     return v.embed(queries) @ v.Z.T
 
 
-def project_2d(Z: np.ndarray) -> tuple[np.ndarray, str]:
-    """UMAP if available (better clusters), else the first 2 LSA components."""
+UMAP_NEIGHBORS = 30
+SEPARATION = 0.5  # 0 = tight clumps, 1 = evenly spread
+
+
+def _neighbors(Z: np.ndarray) -> int:
+    return max(2, min(UMAP_NEIGHBORS, len(Z) - 1))
+
+
+def knn_graph(Z: np.ndarray):
+    """kNN graph shared by every UMAP run on the same docs (the slow part of UMAP)."""
+    from umap.umap_ import nearest_neighbors
+    idx, dist, _ = nearest_neighbors(Z, _neighbors(Z), "cosine", {}, False, None)
+    return idx, dist
+
+
+def project_2d(Z: np.ndarray, separation: float = SEPARATION, knn=None, init: np.ndarray | None = None
+               ) -> tuple[np.ndarray, str]:
+    """UMAP if available (better clusters), else the first 2 LSA components.
+
+    `separation` hides UMAP's knobs: it drives min_dist and spread together.
+    `init` (a previous layout) keeps the map stable between adjustments.
+    """
     try:
         import umap
-        n = len(Z)
-        xy = umap.UMAP(n_neighbors=min(15, n - 1), min_dist=0.1, metric="cosine",
-                       random_state=0, low_memory=True).fit_transform(Z)
+        kw = {"precomputed_knn": (*knn, None)} if knn is not None else {}
+        xy = umap.UMAP(n_neighbors=_neighbors(Z), min_dist=0.99 * separation, spread=1.0 + 1.5 * separation,
+                       metric="cosine", random_state=0, low_memory=True,
+                       init=init if init is not None and len(init) == len(Z) else "spectral", **kw).fit_transform(Z)
         return xy, "UMAP"
-    except Exception:
+    except ImportError:
         return Z[:, :2], "LSA"
 
 

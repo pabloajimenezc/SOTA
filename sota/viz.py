@@ -40,12 +40,12 @@ def top_bar(values: pd.Series, n: int = 15, title: str = "") -> go.Figure:
 def topic_map(df: pd.DataFrame, xy: np.ndarray, color: pd.Series, title: str = "") -> go.Figure:
     d = df.assign(x=xy[:, 0], y=xy[:, 1], grupo=color.astype(str).values,
                   tam=np.log1p(df["article_citation_count"]) + 2)
-    fig = px.scatter(d, x="x", y="y", color="grupo", size="tam", size_max=12, title=title,
+    fig = px.scatter(d, x="x", y="y", color="grupo", size="tam", size_max=9, title=title,
                      hover_name="document_title", color_discrete_sequence=SEQ,
                      hover_data={"publication_year": True, "publication_title": True,
                                  "article_citation_count": True, "x": False, "y": False, "tam": False},
                      custom_data=["id"])
-    fig.update_traces(marker=dict(line=dict(width=0), opacity=0.75))
+    fig.update_traces(marker=dict(line=dict(width=0), opacity=0.6))
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False)
     return _style(fig, height=620)

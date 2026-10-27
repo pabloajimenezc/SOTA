@@ -4,8 +4,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from app_pages.shared import (clusters, csv_bytes, reasons, require_raw, rules, sota_index, store, subset_key,
-                               vectors)
+from app_pages.shared import (clusters, csv_bytes, reasons, require_raw, rules, sota_index, sticky, store,
+                               subset_key, vectors)
 from sota import data, text, viz
 from sota.store import StoreError, make_meta, owner_id
 
@@ -26,21 +26,46 @@ key = subset_key(kept, "explore")
 v = vectors(df, key)
 
 
-@st.cache_data(max_entries=4, ttl=3 * 3600, show_spinner="Calculando mapa 2D (UMAP)…")
-def project(_Z, key):
-    return text.project_2d(_Z)
+@st.cache_resource(max_entries=4, ttl=3 * 3600, show_spinner="Preparando el mapa…")
+def knn(_Z, key):
+    return text.knn_graph(_Z)
+
+
+@st.cache_data(max_entries=12, ttl=3 * 3600, show_spinner="Calculando el mapa…")
+def project(_Z, key, separation, _init):
+    return text.project_2d(_Z, separation, knn(_Z, key), _init)
+
+
+HAS_SAVED_MAP = {"x", "y"} <= set(df.columns) and df[["x", "y"]].notna().all().all()
+ss = st.session_state
+ss.setdefault("map_sep", (meta or {}).get("map_sep", text.SEPARATION))
 
 
 def map_xy():
-    """Saved map for published SOTAs, otherwise computed (and cached)."""
-    if {"x", "y"} <= set(df.columns) and df[["x", "y"]].notna().all().all():
-        return df[["x", "y"]].to_numpy(), "UMAP"
-    return project(v.Z, key)
+    """Saved map of a published SOTA until the user asks to adjust it; then computed (cached)."""
+    if HAS_SAVED_MAP and not ss.get("map_custom"):
+        return df[["x", "y"]].to_numpy()
+    init = ss.get("map_prev", df[["x", "y"]].to_numpy() if HAS_SAVED_MAP else None)
+    xy, _ = project(v.Z, key, round(ss.map_sep, 3), init)
+    ss.map_prev = xy  # next adjustment starts from this layout
+    return xy
+
+
+def adjust_map(more_space: bool) -> None:
+    """Bisection on the separation between the user's 'too tight' and 'too spread' answers."""
+    lo, hi = ss.get("map_lo", 0.0), ss.get("map_hi", 1.0)
+    if more_space:
+        lo = ss.map_sep
+    else:
+        hi = ss.map_sep
+    ss.map_lo, ss.map_hi, ss.map_sep = lo, hi, (lo + hi) / 2
+    ss.map_custom = True
 
 
 with st.sidebar:
     st.subheader("Tópicos y filtros")
-    k = st.slider("Número de tópicos", 2, 40, meta["k"] if meta else text.suggest_k(len(df)))
+    k = sticky(st.slider, "Número de tópicos", "k_topics", meta["k"] if meta else text.suggest_k(len(df)),
+               min_value=2, max_value=40)
     years = df["publication_year"].dropna().astype(int)
     yr = st.slider("Años", int(years.min()), int(years.max()), (int(years.min()), int(years.max())))
     df["tipo"] = data.doc_type(df)
@@ -58,8 +83,7 @@ st.caption(f"Mostrando **{f.sum():,}** de {len(df):,} artículos limpios.")
 
 SECTIONS = ["Resumen", "Tópicos", "Mapa", "Búsqueda", "Autores y fuentes", "Términos", "Datos"]
 # Only the selected section runs (st.tabs would compute all of them, including UMAP).
-st.session_state.setdefault("explore_view", SECTIONS[0])
-sec = st.segmented_control("Sección", SECTIONS, key="explore_view") or SECTIONS[0]
+sec = sticky(st.segmented_control, "Sección", "explore_view", SECTIONS[0], options=SECTIONS) or SECTIONS[0]
 
 if sec == "Resumen":
     c = st.columns(4)
@@ -100,11 +124,21 @@ elif sec == "Tópicos":
 elif sec == "Mapa":
     st.caption("Cada punto es un artículo; cercanía = similitud de contenido. Tamaño = citas. "
                "Selecciona puntos (lazo/caja) para listarlos.")
-    xy, method = map_xy()
+    xy = map_xy()
     color_by = st.radio("Color", ["tópico", "tipo", "década"], horizontal=True)
     col = (df["publication_year"] // 10 * 10).astype(str) if color_by == "década" else df[color_by]
-    ev = st.plotly_chart(viz.topic_map(d, xy[f], col[f], f"Mapa de artículos ({method})"),
+    ev = st.plotly_chart(viz.topic_map(d, xy[f], col[f], "Mapa de artículos"),
                          width="stretch", on_select="rerun", selection_mode=("lasso", "box"))
+    if not ss.get("map_ok"):
+        st.write("**¿Cómo se ven los puntos?** El mapa se ajusta con tu respuesta.")
+        c1, c2, c3 = st.columns(3)
+        c1.button("🔍 Muy juntos", width="stretch", on_click=adjust_map, args=(True,))
+        c2.button("👍 Están bien", width="stretch", type="primary", on_click=lambda: ss.update(map_ok=True))
+        c3.button("↔️ Muy separados", width="stretch", on_click=adjust_map, args=(False,))
+        if ss.get("map_hi", 1.0) - ss.get("map_lo", 0.0) < 0.07:
+            st.caption("Ya está casi en el límite de ajuste en esa dirección.")
+    else:
+        st.button("Reajustar separación de los puntos", on_click=lambda: ss.update(map_ok=False))
     pts = ev.selection.points if ev else []
     if pts:
         ids = [p["customdata"][0] for p in pts]
@@ -164,9 +198,10 @@ if st.session_state.get("api_key"):
             st.caption(f"Se guardan los {len(df):,} artículos limpios, el mapa, la regla de limpieza y el número de "
                        "tópicos, en Parquet comprimido. Solo tu API key puede volver a publicar con este nombre.")
             if st.button("Publicar", type="primary", disabled=not name.strip()):
-                xy, _ = map_xy()
+                xy = map_xy()
                 out = df.assign(x=xy[:, 0], y=xy[:, 1])
                 m = make_meta(out, name, desc, author, owner_id(st.session_state.api_key), k, asdict(rules()))
+                m["map_sep"] = round(ss.map_sep, 3)
                 try:
                     with st.spinner("Publicando…"):
                         store().save(out, m)

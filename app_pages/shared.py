@@ -45,8 +45,23 @@ def sota_load(slug: str, version: str) -> pd.DataFrame:
     return store().load(slug)
 
 
+STICKY = ["k_topics", "k_clean", "explore_view", "clean_view", "map_sep", "map_lo", "map_hi", "map_ok", "map_custom", "map_prev"]
+
+
+def sticky(widget, label: str, key: str, default, **kw):
+    """Widget whose value survives page switches (Streamlit drops widget state when the page changes)."""
+    st.session_state.setdefault(key, default)
+    if f"_w_{key}" not in st.session_state:
+        st.session_state[f"_w_{key}"] = st.session_state[key]
+    st.session_state[key] = widget(label, key=f"_w_{key}", **kw)
+    return st.session_state[key]
+
+
 def set_raw(df: pd.DataFrame) -> None:
     st.session_state.pop("sota_meta", None)  # own data from now on
+    for k in STICKY:  # settings belong to the previous dataset
+        st.session_state.pop(k, None)
+        st.session_state.pop(f"_w_{k}", None)
     st.session_state.raw = df
     st.session_state.raw_key = hashlib.md5(pd.util.hash_pandas_object(df["id"], index=False).values).hexdigest()
 
