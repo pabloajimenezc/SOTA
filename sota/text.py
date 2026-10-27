@@ -124,7 +124,7 @@ def cluster_summary(v: Vectors, labels: np.ndarray, df: pd.DataFrame) -> pd.Data
         m = labels == c
         cen = normalize(v.Z[m].mean(axis=0, keepdims=True)).ravel()
         rows.append({
-            "cluster": int(c), "docs": int(m.sum()), "distinto": round(float(1 - cen @ glob), 3),
+            "cluster": int(c) + 1, "docs": int(m.sum()), "distinto": round(float(1 - cen @ glob), 3),
             "términos": ", ".join(terms[int(c)]),
             "ejemplo": df.loc[m, "document_title"].iloc[0],
         })
@@ -132,7 +132,26 @@ def cluster_summary(v: Vectors, labels: np.ndarray, df: pd.DataFrame) -> pd.Data
 
 
 def topic_names(v: Vectors, labels: np.ndarray, n: int = 3) -> dict[int, str]:
-    return {c: f"T{c}: " + ", ".join(t[:n]) for c, t in distinctive_terms(v, labels, n).items()}
+    return {c: f"T{c + 1}: " + ", ".join(t[:n]) for c, t in distinctive_terms(v, labels, n).items()}
+
+
+def split(v: Vectors, idx: np.ndarray) -> list[np.ndarray]:
+    """Subdivide a set of docs (row indices of v) into subtopics, largest first. Ends at single docs."""
+    n = len(idx)
+    if n <= 1:
+        return []
+    lab = cluster(v.Z[idx], int(np.clip(round(np.sqrt(n / 2)), 2, 8)))
+    groups = [idx[lab == c] for c in np.unique(lab)]
+    if len(groups) == 1:  # identical vectors: one doc per group
+        groups = [idx[i:i + 1] for i in range(n)]
+    return sorted(groups, key=len, reverse=True)
+
+
+def group_terms(v: Vectors, groups: list[np.ndarray], n: int = 4) -> list[list[str]]:
+    """Terms that distinguish each group from its siblings."""
+    parent = np.asarray(v.X[np.concatenate(groups)].mean(axis=0)).ravel()
+    return [v.terms[np.argsort(np.asarray(v.X[g].mean(axis=0)).ravel() - parent)[::-1][:n]].tolist()
+            for g in groups]
 
 
 def similar(v: Vectors, queries: list[str]) -> np.ndarray:
@@ -171,17 +190,6 @@ def project_2d(Z: np.ndarray, separation: float = SEPARATION, knn=None, init: np
         return xy, "UMAP"
     except ImportError:
         return Z[:, :2], "LSA"
-
-
-def topic_hierarchy(Z: np.ndarray, labels: np.ndarray, groups: int) -> dict[int, int]:
-    """Group topics (Ward linkage over topic centroids). Returns topic -> group."""
-    from scipy.cluster.hierarchy import fcluster, linkage
-    topics = np.unique(labels)
-    if len(topics) <= 2:
-        return {int(t): 1 for t in topics}
-    cen = normalize(np.vstack([Z[labels == t].mean(axis=0) for t in topics]))
-    g = fcluster(linkage(cen, "ward"), t=min(groups, len(topics)), criterion="maxclust")
-    return dict(zip(map(int, topics), map(int, g)))
 
 
 def emerging_terms(v: Vectors, years: pd.Series, recent: int = 5, n: int = 20, min_docs: int = 5) -> pd.DataFrame:

@@ -57,10 +57,16 @@ def heatmap(table: pd.DataFrame, title: str = "", fmt: str = ".0f", zlabel: str 
     return _style(fig, height=max(350, 28 * len(table) + 120))
 
 
-def treemap(d: pd.DataFrame, path: list[str], title: str = "") -> go.Figure:
-    fig = px.treemap(d, path=path, values="docs", title=title, color_discrete_sequence=SEQ)
-    fig.update_traces(root_color="white", textinfo="label+value")
-    return _style(fig, height=560)
+def treemap_flat(sizes: list[int], codes: list[str], tags: list[str], title: str = "") -> go.Figure:
+    """One level of the topic tree. Fixed text size so keywords stay readable."""
+    wrap = [t.replace(", ", "<br>", 3) for t in tags]
+    fig = go.Figure(go.Treemap(labels=codes, parents=[""] * len(codes), values=sizes, customdata=tags,
+                               text=wrap, texttemplate="<b>%{label}</b> · %{value}<br>%{text}",
+                               hovertemplate="<b>%{label}</b> · %{value} artículos<br>%{customdata}<extra></extra>",
+                               textfont=dict(size=14), marker=dict(colors=SEQ * (len(codes) // len(SEQ) + 1)),
+                               tiling=dict(pad=2)))
+    fig.update_layout(title=title, uniformtext=dict(minsize=12, mode="hide"))
+    return _style(fig, height=520)
 
 
 def citations(df: pd.DataFrame, color: pd.Series, title: str = "") -> go.Figure:

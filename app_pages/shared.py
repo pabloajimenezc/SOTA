@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from sota import cleaning, text
+from sota import cleaning, data, text
 from sota.cleaning import Rules
 from sota.ieee import IEEEClient
 from sota.store import GitHubStore
@@ -42,10 +42,10 @@ def sota_index() -> list[dict]:
 
 @st.cache_data(ttl=3 * 3600, max_entries=4, show_spinner="Cargando SOTA…")
 def sota_load(slug: str, version: str) -> pd.DataFrame:
-    return store().load(slug)
+    return data.add_links(store().load(slug))
 
 
-STICKY = ["k_topics", "k_clean", "explore_view", "clean_view", "map_sep", "map_lo", "map_hi", "map_ok", "map_custom", "map_prev"]
+STICKY = ["topic_path", "topic_path_k", "k_topics", "k_clean", "explore_view", "clean_view", "map_sep", "map_lo", "map_hi", "map_ok", "map_custom", "map_prev"]
 
 
 def sticky(widget, label: str, key: str, default, **kw):

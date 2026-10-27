@@ -97,7 +97,18 @@ def finalize(df: pd.DataFrame) -> pd.DataFrame:
     df = df.assign(_len=df["abstract"].str.len()).sort_values("_len", ascending=False)
     df = df[~_norm(df["document_title"]).duplicated()].drop(columns="_len")
     df = df.drop_duplicates("id")
-    return df.sort_index().reset_index(drop=True)
+    return add_links(df.sort_index().reset_index(drop=True))
+
+
+def add_links(df: pd.DataFrame) -> pd.DataFrame:
+    """Fill html_url (missing in IEEE CSV exports) from the article number, DOI or PDF link."""
+    url = df["html_url"].astype("string").where(df["html_url"].astype("string").str.startswith("http", na=False))
+    num = df["id"].astype("string").where(df["id"].astype("string").str.fullmatch(r"\d+", na=False))
+    doi = df.get("doi", pd.Series(pd.NA, index=df.index)).astype("string")
+    df["html_url"] = (url.fillna("https://ieeexplore.ieee.org/document/" + num + "/")
+                      .fillna("https://doi.org/" + doi.where(doi.str.startswith("10.", na=False)))
+                      .fillna(df["pdf_link"].astype("string").where(df["pdf_link"].astype("string").str.startswith("http", na=False))))
+    return df
 
 
 def merge(*dfs: pd.DataFrame) -> pd.DataFrame:

@@ -102,15 +102,15 @@ def term_picker(terms: list[str], wkey: str, scope=None) -> list[str]:
 if view == "Clusters":
     st.caption("Clusters ordenados del más **distinto** al resto (arriba suelen estar los temas ajenos, "
                "p. ej. medicina por *vessel*). Selecciona uno para inspeccionarlo.")
-    k = sticky(st.slider, "Número de clusters", "k_clean", text.suggest_k(len(dk)), min_value=2, max_value=40)
+    k = sticky(st.number_input, "Número de clusters", "k_clean", text.suggest_k(len(dk)), min_value=2, max_value=60, step=1)
     labels = clusters(v, key, k)
     summ = text.cluster_summary(v, labels, dk)
     sel = st.dataframe(summ, hide_index=True, on_select="rerun", selection_mode="single-row", key=f"summ{k}",
                        column_config={"distinto": st.column_config.ProgressColumn(min_value=0, max_value=1, format="%.2f")})
     if sel.selection.rows:
-        c = int(summ.loc[sel.selection.rows[0], "cluster"])
+        c = int(summ.loc[sel.selection.rows[0], "cluster"]) - 1
         m = labels == c
-        st.subheader(f"Cluster {c} · {m.sum()} artículos")
+        st.subheader(f"Cluster {c + 1} · {m.sum()} artículos")
         picked = term_picker(text.distinctive_terms(v, labels, 15)[c], f"pc{key}{c}", m)
         b1, b2, b3 = st.columns(3)
         if b1.button("➕ Añadir términos a la regla", disabled=not picked):

@@ -1,3 +1,4 @@
+import hashlib
 from dataclasses import asdict
 
 import numpy as np
@@ -24,6 +25,11 @@ if len(df) < 10:
 # Re-vectorize the clean corpus so the vocabulary reflects only relevant docs.
 key = subset_key(kept, "explore")
 v = vectors(df, key)
+
+
+@st.cache_data(max_entries=512, ttl=3 * 3600, show_spinner="Subdividiendo…")
+def children(_v, key, node_key, _idx):
+    return text.split(_v, _idx)
 
 
 @st.cache_resource(max_entries=4, ttl=3 * 3600, show_spinner="Preparando el mapa…")
@@ -64,8 +70,8 @@ def adjust_map(more_space: bool) -> None:
 
 with st.sidebar:
     st.subheader("Tópicos y filtros")
-    k = sticky(st.slider, "Número de tópicos", "k_topics", meta["k"] if meta else text.suggest_k(len(df)),
-               min_value=2, max_value=40)
+    k = sticky(st.number_input, "Número de tópicos", "k_topics", meta["k"] if meta else text.suggest_k(len(df)),
+               min_value=2, max_value=60, step=1)
     years = df["publication_year"].dropna().astype(int)
     yr = st.slider("Años", int(years.min()), int(years.max()), (int(years.min()), int(years.max())))
     df["tipo"] = data.doc_type(df)
@@ -98,28 +104,72 @@ if sec == "Resumen":
                  hide_index=True, column_config={"html_url": st.column_config.LinkColumn("link", display_text="abrir")})
 
 elif sec == "Tópicos":
-    groups = st.slider("Grupos de tópicos (jerarquía)", 1, max(1, k // 2), max(1, k // 4))
-    h = text.topic_hierarchy(v.Z, labels, groups)
-    gnames = {g: f"Grupo {g}" for g in set(h.values())}
-    tree = pd.DataFrame({"grupo": pd.Series(labels[f]).map(h).map(gnames), "tópico": d["tópico"].values})
-    st.plotly_chart(viz.treemap(tree.value_counts().rename("docs").reset_index(), ["grupo", "tópico"],
-                                "Jerarquía de tópicos (tamaño = nº de artículos)"), width="stretch")
-    share = st.toggle("Ver como % del año")
-    st.plotly_chart(viz.per_year(d, d["tópico"], share, "Evolución de tópicos"), width="stretch")
-    top_venues = d["publication_title"].value_counts().head(12).index
-    tv = pd.crosstab(d["tópico"], d["publication_title"]).reindex(columns=top_venues)
-    st.plotly_chart(viz.heatmap(tv, "Tópicos × fuentes principales", zlabel="docs"), width="stretch")
+    st.caption("Elige un tópico para subdividirlo en subtemas; puedes seguir bajando hasta llegar a un solo artículo.")
+    if ss.get("topic_path_k") != k:  # path refers to the current topic count
+        ss.topic_path, ss.topic_path_k = [], k
+    path = ss.topic_path
 
-    st.subheader("Artículo representativo de cada tópico")
-    rep = []
-    for t in np.unique(labels):
-        idx = np.flatnonzero(labels == t)
-        cen = v.Z[idx].mean(axis=0)
-        i = idx[np.argmax(v.Z[idx] @ cen)]
-        rep.append({"tópico": names[int(t)], "docs": len(idx), "representativo": df.at[i, "document_title"],
-                    "año": df.at[i, "publication_year"], "link": df.at[i, "html_url"]})
-    st.dataframe(pd.DataFrame(rep), hide_index=True,
-                 column_config={"link": st.column_config.LinkColumn(display_text="abrir")})
+    # Walk down the tree: root = the k topics, below = automatic subdivisions (cached per node).
+    groups = [g for g in (np.flatnonzero((labels == t) & f) for t in range(k))]
+    codes = [str(t + 1) for t in range(k)]
+    tags = [names[t].split(": ", 1)[1] for t in range(k)]
+    trail = []
+    for depth, pick in enumerate(path):
+        if pick >= len(groups) or len(groups[pick]) == 0:
+            del path[depth:]
+            break
+        node, code = groups[pick], codes[pick]
+        trail.append(code)
+        groups = children(v, key, hashlib.md5(node.tobytes()).hexdigest(), node)
+        codes = [f"{code}.{j + 1}" for j in range(len(groups))]
+        tags = [df.at[g[0], "document_title"][:80] if len(g) == 1 else ", ".join(t)
+                for g, t in zip(groups, text.group_terms(v, groups) if groups else [])]
+    keep = [i for i, g in enumerate(groups) if len(g)]
+    groups, codes, tags = [groups[i] for i in keep], [codes[i] for i in keep], [tags[i] for i in keep]
+
+    shown = list(enumerate(trail))[-4:]  # breadcrumb: last levels only
+    crumbs = st.columns(5)
+    if crumbs[0].button("🏠 Todos los tópicos", disabled=not path):
+        path.clear()
+        st.rerun()
+    for col, (i, code) in zip(crumbs[1:], shown):
+        if col.button(f"› {code}", disabled=i == len(trail) - 1, key=f"crumb_{code}"):
+            del path[i + 1:]
+            st.rerun()
+
+    if not groups:  # a single article
+        row = df.iloc[node[0]]
+        st.markdown(f"#### [{row['document_title']}]({row['html_url']})")
+        st.caption(f"{row['publication_year']} · {row['publication_title']} · {row['article_citation_count']} citas")
+        st.write(row["abstract"])
+    else:
+        n_node = sum(map(len, groups))
+        title = f"Tópico {trail[-1]} · {n_node:,} artículos" if trail else f"{k} tópicos · {n_node:,} artículos"
+        st.plotly_chart(viz.treemap_flat([len(g) for g in groups], codes, tags, title), width="stretch")
+        pick = st.pills("Entrar a", codes, key=f"enter_{'.'.join(trail)}_{k}")
+        if pick:
+            path.append(keep[codes.index(pick)])
+            st.rerun()
+
+        grp = pd.Series(index=np.concatenate(groups), dtype="object")
+        for c, t, g in zip(codes, tags, groups):
+            grp[g] = f"{c}: {t[:40]}"
+        dn = df.loc[grp.index].assign(grupo=grp.values)
+        share = st.toggle("Ver como % del año")
+        st.plotly_chart(viz.per_year(dn, dn["grupo"], share, "Evolución de los subtemas" if trail else "Evolución de tópicos"),
+                        width="stretch")
+        top_venues = dn["publication_title"].value_counts().head(12).index
+        tv = pd.crosstab(dn["grupo"], dn["publication_title"]).reindex(columns=top_venues)
+        st.plotly_chart(viz.heatmap(tv, "Subtemas × fuentes principales", zlabel="docs"), width="stretch")
+
+        st.subheader("Artículo representativo de cada subtema")
+        rep = []
+        for c, t, g in zip(codes, tags, groups):
+            i = g[np.argmax(v.Z[g] @ v.Z[g].mean(axis=0))]
+            rep.append({"código": c, "términos": t, "docs": len(g), "representativo": df.at[i, "document_title"],
+                        "año": df.at[i, "publication_year"], "link": df.at[i, "html_url"]})
+        st.dataframe(pd.DataFrame(rep), hide_index=True,
+                     column_config={"link": st.column_config.LinkColumn(display_text="abrir")})
 
 elif sec == "Mapa":
     st.caption("Cada punto es un artículo; cercanía = similitud de contenido. Tamaño = citas. "
