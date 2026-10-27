@@ -42,18 +42,26 @@ def project(_Z, key, separation, _init):
     return text.project_2d(_Z, separation, knn(_Z, key), _init)
 
 
-HAS_SAVED_MAP = {"x", "y"} <= set(df.columns) and df[["x", "y"]].notna().all().all()
+XY_SAVED = df[["x", "y"]].to_numpy(dtype=float) if {"x", "y"} <= set(df.columns) else np.full((len(df), 2), np.nan)
+HAS_SAVED_MAP = not np.isnan(XY_SAVED).any()
 ss = st.session_state
 ss.setdefault("map_sep", (meta or {}).get("map_sep", text.SEPARATION))
 
 
+def base_map() -> np.ndarray:
+    """Reference layout: the saved one, or computed deterministically (anchored on saved positions if any)."""
+    if HAS_SAVED_MAP:
+        return XY_SAVED
+    xy, _ = project(v.Z, key, text.SEPARATION, text.anchored_init(v.Z, XY_SAVED))
+    return xy
+
+
 def map_xy():
-    """Saved map of a published SOTA until the user asks to adjust it; then computed (cached)."""
-    if HAS_SAVED_MAP and not ss.get("map_custom"):
-        return df[["x", "y"]].to_numpy()
-    init = ss.get("map_prev", df[["x", "y"]].to_numpy() if HAS_SAVED_MAP else None)
-    xy, _ = project(v.Z, key, round(ss.map_sep, 3), init)
-    ss.map_prev = xy  # next adjustment starts from this layout
+    """Base layout until the user adjusts spacing; adjusted maps always start from the base so they stay aligned."""
+    base = base_map()
+    if not ss.get("map_custom"):
+        return base
+    xy, _ = project(v.Z, key, round(ss.map_sep, 3), base)
     return xy
 
 
@@ -104,7 +112,7 @@ if sec == "Resumen":
                  hide_index=True, column_config={"html_url": st.column_config.LinkColumn("link", display_text="abrir")})
 
 elif sec == "Tópicos":
-    st.caption("Elige un tópico para subdividirlo en subtemas; puedes seguir bajando hasta llegar a un solo artículo.")
+    st.caption("Haz clic en un cuadro para subdividirlo en subtemas; puedes seguir bajando hasta llegar a un solo artículo.")
     if ss.get("topic_path_k") != k:  # path refers to the current topic count
         ss.topic_path, ss.topic_path_k = [], k
     path = ss.topic_path
@@ -145,10 +153,11 @@ elif sec == "Tópicos":
     else:
         n_node = sum(map(len, groups))
         title = f"Tópico {trail[-1]} · {n_node:,} artículos" if trail else f"{k} tópicos · {n_node:,} artículos"
-        st.plotly_chart(viz.treemap_flat([len(g) for g in groups], codes, tags, title), width="stretch")
-        pick = st.pills("Entrar a", codes, key=f"enter_{'.'.join(trail)}_{k}")
-        if pick:
-            path.append(keep[codes.index(pick)])
+        ev = st.plotly_chart(viz.treemap_flat([len(g) for g in groups], codes, tags, title), width="stretch",
+                             on_select="rerun", selection_mode="points", key=f"tree_{'.'.join(trail)}_{k}")
+        clicked = [p["point_index"] for p in (ev.selection.points if ev else [])]
+        if clicked:
+            path.append(keep[clicked[0]])
             st.rerun()
 
         grp = pd.Series(index=np.concatenate(groups), dtype="object")

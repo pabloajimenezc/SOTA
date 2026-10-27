@@ -90,8 +90,11 @@ def suggest_k(n: int) -> int:
 
 
 def cluster(Z: np.ndarray, k: int) -> np.ndarray:
+    """Deterministic KMeans; label 0 = largest cluster, so numbering is stable."""
     k = max(1, min(k, len(Z)))
-    return KMeans(n_clusters=k, n_init=4, random_state=0).fit_predict(Z)
+    lab = KMeans(n_clusters=k, n_init=4, random_state=0).fit_predict(Z)
+    order = np.argsort(-np.bincount(lab, minlength=k), kind="stable")
+    return np.argsort(order)[lab]
 
 
 def distinctive_terms(v: Vectors, labels: np.ndarray, n: int = 8) -> dict[int, list[str]]:
@@ -170,8 +173,27 @@ def _neighbors(Z: np.ndarray) -> int:
 def knn_graph(Z: np.ndarray):
     """kNN graph shared by every UMAP run on the same docs (the slow part of UMAP)."""
     from umap.umap_ import nearest_neighbors
-    idx, dist, _ = nearest_neighbors(Z, _neighbors(Z), "cosine", {}, False, None)
+    # Seeded: NN-descent is random otherwise, which would change the map on every session.
+    idx, dist, _ = nearest_neighbors(Z, _neighbors(Z), "cosine", {}, False, np.random.RandomState(0))
     return idx, dist
+
+
+def anchored_init(Z: np.ndarray, xy: np.ndarray) -> np.ndarray | None:
+    """Start layout from known positions (NaN rows = new docs, placed on their most similar known doc).
+
+    Keeps the map recognizable when a SOTA gains or loses articles.
+    """
+    known = ~np.isnan(xy).any(axis=1)
+    if known.sum() < max(10, 0.5 * len(Z)):
+        return None
+    init = xy.copy()
+    unk = np.flatnonzero(~known)
+    ref = np.flatnonzero(known)
+    for s in range(0, len(unk), 2000):
+        part = unk[s:s + 2000]
+        init[part] = xy[ref[np.argmax(Z[part] @ Z[ref].T, axis=1)]]
+    span = np.nanstd(xy, axis=0) * 0.01
+    return init + np.random.RandomState(0).normal(size=init.shape) * span
 
 
 def project_2d(Z: np.ndarray, separation: float = SEPARATION, knn=None, init: np.ndarray | None = None

@@ -145,3 +145,13 @@ def test_text_pipeline():
     sim = text.similar(v, ["electric ship"])
     assert np.argmax(sim[0]) % 2 == 0
     assert text.clean("Vessels and ships", {"vessel": "ship"}) == "ship ship"
+
+
+def test_stable_layouts():
+    from sota import viz
+    rects = viz.squarify([50, 25, 15, 10], 0, 0, 100, 60)
+    assert [round(w * h) for _, _, w, h in rects] == [3000, 1500, 900, 600]
+    Z = np.random.RandomState(1).normal(size=(60, 5))
+    lab = text.cluster(Z, 4)
+    assert (np.diff(np.bincount(lab)) <= 0).all()  # T1 = largest topic
+    assert (lab == text.cluster(Z, 4)).all()

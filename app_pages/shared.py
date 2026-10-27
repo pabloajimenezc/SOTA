@@ -45,7 +45,7 @@ def sota_load(slug: str, version: str) -> pd.DataFrame:
     return data.add_links(store().load(slug))
 
 
-STICKY = ["topic_path", "topic_path_k", "k_topics", "k_clean", "explore_view", "clean_view", "map_sep", "map_lo", "map_hi", "map_ok", "map_custom", "map_prev"]
+STICKY = ["topic_path", "topic_path_k", "k_topics", "k_clean", "explore_view", "clean_view", "map_sep", "map_lo", "map_hi", "map_ok", "map_custom"]
 
 
 def sticky(widget, label: str, key: str, default, **kw):
