@@ -27,3 +27,6 @@
 !.streamlit/config.toml
 !rules/*.json
 /.streamlit/secrets.toml
+
+# Offline geodata (GeoNames extract)
+!sota/geodata/*

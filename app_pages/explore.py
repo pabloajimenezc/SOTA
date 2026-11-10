@@ -7,7 +7,7 @@ import streamlit as st
 
 from app_pages.shared import (clusters, csv_bytes, published, reasons, require_raw, rules, sota_index, sticky,
                                store, subset_key, vectors)
-from sota import data, text, viz
+from sota import data, geo, text, viz
 from sota.store import StoreError, make_meta, owner_id
 
 raw = require_raw()
@@ -32,6 +32,11 @@ v = vectors(df, key)
 @st.cache_data(max_entries=512, ttl=3 * 3600, show_spinner="Subdividiendo…")
 def children(_v, key, node_key, _idx):
     return text.split(_v, _idx)
+
+
+@st.cache_data(max_entries=8, ttl=3 * 3600, show_spinner="Ubicando instituciones…")
+def affiliations(_df, key):
+    return geo.affiliations(_df)
 
 
 @st.cache_resource(max_entries=4, ttl=3 * 3600, show_spinner="Preparando el mapa…")
@@ -87,9 +92,17 @@ with st.sidebar:
     yr = st.slider("Años", int(years.min()), int(years.max()), (int(years.min()), int(years.max())))
     df["tipo"] = data.doc_type(df)
     types = st.multiselect("Tipo de publicación", sorted(df["tipo"].unique()), placeholder="Todos")
-    df["chile"] = data.chile(df).values
-    only_cl = st.toggle(f"★ Solo autores en Chile ({int(df['chile'].sum())})",
-                        help="Artículos con al menos un autor afiliado a una institución en Chile.")
+    aff = affiliations(df, key)
+    doc_iso = geo.article_countries(aff, len(df))
+    per_country = pd.Series([c for cs in doc_iso for c in cs]).value_counts()
+    isos = per_country.index.tolist()
+    iso = st.selectbox("País destacado", isos, index=isos.index("CL") if "CL" in isos else None,
+                       format_func=lambda c: f"{geo.country_name(c)} ({per_country[c]:,})", placeholder="Ninguno",
+                       help="Sus artículos se marcan con su bandera en el mapa. Según la afiliación de los autores.")
+    country = geo.country_name(iso) if iso else ""
+    df["destacado"] = [iso in cs for cs in doc_iso]
+    only_cl = st.toggle(f"Solo artículos de {country}" if iso else "Solo artículos del país destacado",
+                        disabled=not iso)
 
 pub = published(df)
 if pub and k == pub.get("k") and "topic" in df and df["topic"].notna().all():
@@ -103,25 +116,26 @@ f = df["publication_year"].between(*yr).fillna(False).to_numpy()
 if types:
     f &= df["tipo"].isin(types).to_numpy()
 if only_cl:
-    f &= df["chile"].to_numpy()
+    f &= df["destacado"].to_numpy()
 d = df[f]
 if d.empty:
     st.warning("Ningún artículo cumple los filtros. Amplía los años o quita filtros.")
     st.stop()
 
 c = st.columns(5)
-c[0].metric("Artículos", f"{len(d):,}", help=f"De {len(df):,} tras la limpieza.")
+c[0].metric("Artículos", f"{len(d):,}")
 c[1].metric("Desde", f"{yr[0]}")
 c[2].metric("Temas", k)
-c[3].metric("Fuentes", f"{d['publication_title'].nunique():,}", help="Revistas y congresos distintos.")
-c[4].metric("★ Chile", f"{int(d['chile'].sum()):,}", help="Artículos con autores en Chile.")
+c[3].metric("Fuentes", f"{d['publication_title'].nunique():,}")
+c[4].metric(country or "País", f"{int(d['destacado'].sum()):,}" if iso else "—")
 
 LINK = {"html_url": st.column_config.LinkColumn("enlace", display_text="abrir ↗"),
-        "chile": st.column_config.CheckboxColumn("★ Chile"),
+        "destacado": st.column_config.CheckboxColumn(country or "país"),
         "document_title": st.column_config.TextColumn("título", width="large"),
         "publication_year": st.column_config.NumberColumn("año", format="%d"),
         "publication_title": "revista / congreso", "article_citation_count": "citas"}
-SECTIONS = ["📊 Resumen", "🧭 Temas", "🗺️ Mapa", "🔎 Buscar", "👥 Autores", "📈 Tendencias", "📄 Datos"]
+SECTIONS = ["📊 Resumen", "🧭 Temas", "🗺️ Mapa", "🌍 Geografía", "🔎 Buscar", "👥 Autores", "📈 Tendencias",
+            "📄 Datos"]
 # Only the selected section runs (st.tabs would compute all of them, including the map).
 sec = sticky(st.segmented_control, "Sección", "explore_view", SECTIONS[0], options=SECTIONS,
              label_visibility="collapsed") or SECTIONS[0]
@@ -130,7 +144,7 @@ if sec == SECTIONS[0]:
     st.plotly_chart(viz.per_year(d, d["tipo"], title="Publicaciones por año"), width="stretch")
     st.subheader("Artículos más citados")
     st.dataframe(d.nlargest(20, "article_citation_count")[
-                     ["document_title", "publication_year", "publication_title", "article_citation_count", "chile",
+                     ["document_title", "publication_year", "publication_title", "article_citation_count", "destacado",
                       "html_url"]], hide_index=True, column_config=LINK)
 
 elif sec == SECTIONS[1]:
@@ -171,7 +185,7 @@ elif sec == SECTIONS[1]:
     if not groups:  # a single article
         row = df.iloc[node[0]]
         with st.container(border=True):
-            st.markdown(f"#### {'★ ' if row['chile'] else ''}[{row['document_title']}]({row['html_url']})")
+            st.markdown(f"#### {'🏳 ' if row['destacado'] else ''}[{row['document_title']}]({row['html_url']})")
             st.caption(f"{row['publication_year']} · {row['publication_title']} · {row['article_citation_count']} citas"
                        f"  \n{row['authors']}")
             st.write(row["abstract"])
@@ -209,14 +223,15 @@ elif sec == SECTIONS[1]:
 
 elif sec == SECTIONS[2]:
     st.caption("Cada punto es un artículo: **los parecidos quedan cerca**. Tamaño = citas. "
-               "★ = autores en Chile. Encierra puntos con el lazo para listarlos.")
+               f"{'Las banderas marcan artículos con autores de ' + country + '. ' if iso else ''}"
+               "Encierra puntos con el lazo para listarlos.")
     xy = map_xy()
     c1, c2 = st.columns([3, 1], vertical_alignment="center")
     color_by = c1.segmented_control("Colorear por", ["Tema", "Tipo", "Década"], default="Tema")
-    mark_cl = c2.toggle("Destacar ★ Chile", value=True)
+    mark_cl = c2.toggle("Mostrar banderas", value=True, disabled=not iso)
     col = {"Tema": df["tema"], "Tipo": df["tipo"],
            "Década": (df["publication_year"] // 10 * 10).astype(str)}[color_by or "Tema"]
-    ev = st.plotly_chart(viz.topic_map(d, xy[f], col[f], highlight=d["chile"] if mark_cl else None),
+    ev = st.plotly_chart(viz.topic_map(d, xy[f], col[f], highlight=d["destacado"] if mark_cl and iso else None, flag=iso),
                          width="stretch", on_select="rerun", selection_mode=("lasso", "box"))
     if not ss.get("map_ok"):
         st.write("**¿Cómo se ven los puntos?** El mapa se ajusta con tu respuesta.")
@@ -231,10 +246,39 @@ elif sec == SECTIONS[2]:
     pts = ev.selection.points if ev else []
     if pts:
         ids = [p["customdata"][0] for p in pts]
-        st.dataframe(d[d["id"].isin(ids)][["document_title", "publication_year", "tema", "chile", "html_url"]],
+        st.dataframe(d[d["id"].isin(ids)][["document_title", "publication_year", "tema", "destacado", "html_url"]],
                      hide_index=True, column_config=LINK)
 
 elif sec == SECTIONS[3]:
+    st.caption("Cada punto es una institución (universidad, centro o empresa) con artículos en este SOTA; su "
+               "tamaño es la cantidad de artículos. **Haz clic en un punto** (o encierra varios) para ver sus "
+               "publicaciones. Ubicación aproximada: ciudad de la afiliación.")
+    aff_d = aff[f[aff["doc"].to_numpy()]]
+    inst = geo.institutions(aff_d)
+    inst["destacado"] = inst["iso"] == iso
+    ev = st.plotly_chart(viz.world(inst, country), width="stretch", on_select="rerun",
+                         selection_mode=("points", "box", "lasso"), key=f"world_{iso}_{yr}_{len(d)}")
+    rows = sorted({int(p["customdata"][0]) for p in (ev.selection.points if ev else []) if p.get("customdata")})
+    if rows:
+        picked = inst.iloc[rows]
+        keys = set(zip(picked["institution"].map(geo.norm), picked["iso"]))
+        docs = sorted({doc for doc, i, c in zip(aff_d["doc"], aff_d["institution"].map(geo.norm), aff_d["iso"])
+                       if (i, c) in keys})
+        one = len(picked) == 1
+        st.subheader(picked["institution"].iloc[0] if one else f"{len(picked)} instituciones")
+        place = f"{picked['city'].iloc[0] or ''}, {picked['country'].iloc[0]} · " if one else ""
+        st.caption(f"{place}{len(docs)} artículos en este SOTA")
+        st.dataframe(df.iloc[docs].sort_values("publication_year", ascending=False)[
+                         ["document_title", "publication_year", "tema", "article_citation_count", "html_url"]],
+                     hide_index=True, column_config=LINK)
+    else:
+        c1, c2 = st.columns(2)
+        c1.plotly_chart(viz.hbar(geo.country_counts(aff_d).head(12), "Países con más artículos", "Artículos"),
+                        width="stretch")
+        c2.plotly_chart(viz.hbar(inst.set_index("institution")["docs"].head(12), "Instituciones con más artículos",
+                                 "Artículos"), width="stretch")
+
+elif sec == SECTIONS[4]:
     st.caption("Escribe uno o varios temas (uno por línea), en inglés. Encontramos los artículos más parecidos "
                "y te mostramos en qué temas del SOTA caen.")
     c1, c2 = st.columns([3, 1])
@@ -249,26 +293,30 @@ elif sec == SECTIONS[3]:
             top = np.argsort(-s)[:n_nb]
             prof[q] = pd.Series(labels[top]).map(names).value_counts(normalize=True) * 100
             with st.expander(f"🔎 {q}", expanded=len(qs) == 1):
-                st.dataframe(df.iloc[top][["document_title", "publication_year", "tema", "chile", "html_url"]]
+                st.dataframe(df.iloc[top][["document_title", "publication_year", "tema", "destacado", "html_url"]]
                              .assign(parecido=(s[top] * 100).round().astype(int)), hide_index=True,
                              column_config=LINK | {"parecido": st.column_config.ProgressColumn(
                                  "parecido", min_value=0, max_value=100, format="%d%%")})
         st.subheader("¿En qué temas cae cada búsqueda?")
         st.plotly_chart(viz.heatmap(pd.DataFrame(prof).T.fillna(0), zlabel="% de resultados"), width="stretch")
 
-elif sec == SECTIONS[4]:
-    aff = data.split_list(d["author_affiliations"])
+elif sec == SECTIONS[5]:
+    aff_d = aff[f[aff["doc"].to_numpy()]]
+    inst_all = geo.institutions(aff_d)
     c1, c2 = st.columns(2)
     c1.plotly_chart(viz.top_bar(data.split_list(d["authors"]), title="Autores con más artículos"), width="stretch")
     c2.plotly_chart(viz.top_bar(d["publication_title"], title="Revistas y congresos principales"), width="stretch")
-    c1.plotly_chart(viz.top_bar(aff, title="Instituciones"), width="stretch")
-    c2.plotly_chart(viz.top_bar(aff.map(data.country), title="Países (según afiliación)"), width="stretch")
-    cl = aff[aff.str.contains(r"(?<![a-z])chile(?![a-z])", case=False, regex=True)]
-    if len(cl):
-        st.plotly_chart(viz.top_bar(cl, title="★ Instituciones en Chile"), width="stretch")
+    c1.plotly_chart(viz.hbar(inst_all.set_index("institution")["docs"].head(15), "Instituciones", "Artículos"),
+                    width="stretch")
+    c2.plotly_chart(viz.hbar(geo.country_counts(aff_d).head(15), "Países", "Artículos"), width="stretch")
+    if iso:
+        inst_c = inst_all[inst_all["iso"] == iso]
+        if len(inst_c):
+            st.plotly_chart(viz.hbar(inst_c.set_index("institution")["docs"].head(15),
+                                     f"Instituciones de {country}", "Artículos"), width="stretch")
     st.plotly_chart(viz.citations(d, d["tema"], "Citas según año de publicación"), width="stretch")
 
-elif sec == SECTIONS[5]:
+elif sec == SECTIONS[6]:
     st.caption("Palabras que aparecen cada vez más en los artículos recientes: pistas de hacia dónde va el área.")
     recent = st.slider("¿Cuántos años cuentan como recientes?", 2, 10, 5)
     em = text.emerging_terms(v.subset(f), d["publication_year"], recent)
@@ -277,7 +325,7 @@ elif sec == SECTIONS[5]:
     st.plotly_chart(viz.hbar(pd.Series(w, v.terms).nlargest(25), "Palabras más características del área",
                              "Importancia"), width="stretch")
 
-elif sec == SECTIONS[6]:
+elif sec == SECTIONS[7]:
     st.dataframe(d.drop(columns=["id", "x", "y", "topic"], errors="ignore"), hide_index=True, height=520,
                  column_config=LINK)
     st.download_button("⬇️ Descargar tabla (.csv)", csv_bytes(d), "sota.csv", "text/csv", type="primary")
@@ -299,7 +347,7 @@ if st.session_state.get("api_key"):
                 out = df.assign(x=xy[:, 0], y=xy[:, 1], topic=labels)
                 m = make_meta(out, name, desc, author, owner_id(st.session_state.api_key), k, asdict(rules()))
                 m["map_sep"] = round(ss.map_sep, 3)
-                m["chile"] = int(df["chile"].sum())
+                m["chile"] = int(data.chile(df).sum())
                 try:
                     with st.spinner("Publicando…"):
                         store().save(out, m, text.pack_vectors(v))

@@ -13,7 +13,7 @@ st.html("""<style>
 h1 {letter-spacing: -0.02em; font-weight: 700;}
 [data-testid="stMetric"] {background: #F2F5FB; border: 1px solid #E3E8F2; border-radius: .6rem;
                           padding: .55rem .9rem;}
-[data-testid="stMetricValue"] {font-size: 1.3rem; font-weight: 700; color: #1D4ED8;}
+[data-testid="stMetricValue"] {font-size: clamp(1rem, 1.6vw, 1.5rem); font-weight: 700; color: #1D4ED8;}
 .hero {padding: 2.2rem 2rem; border-radius: .9rem; color: #fff; margin-bottom: 1.2rem;
        background: linear-gradient(120deg, #0B1A3A 0%, #1D4ED8 70%, #0EA5E9 100%);}
 .hero h1 {color: #fff; margin: 0 0 .4rem 0; font-size: 2.3rem;}

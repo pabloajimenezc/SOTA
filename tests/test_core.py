@@ -166,3 +166,20 @@ def test_vectors_roundtrip_and_chile():
     w = text.unpack_vectors(text.pack_vectors(v))
     assert w.X.shape == v.X.shape and np.allclose(w.embed(["ship"]), v.embed(["ship"]), atol=1e-2)
     assert data.chile(df).tolist()[:3] == [True, False, False]
+
+
+def test_geo_affiliations():
+    from sota import geo
+    assert geo.parse("Dept. of EE, Universidad Técnica Federico Santa María, Valparaíso, Chile")[1:3] == ("Valparaiso", "CL")
+    assert geo.parse("School of EE, Southeast University, Nanjing 210096, P.R. China")[:3] == (
+        "Southeast University", "Nanjing", "CN")
+    assert geo.parse("Center for Power Electronics, Blacksburg, VA, USA")[2] == "US"
+    assert geo.parse("Unknown") is None
+    df = pd.DataFrame({"author_affiliations": [
+        "Universidad de Chile, Santiago, Chile; MIT, Cambridge, MA, USA",
+        "Universidad de Chile, Santiago, Chile",
+        "Tsinghua University, Beijing, China"]})
+    aff = geo.affiliations(df)
+    inst = geo.institutions(aff)
+    assert inst.iloc[0]["institution"] == "Universidad de Chile" and inst.iloc[0]["docs"] == 2
+    assert geo.country_counts(aff)["Chile"] == 2 and geo.article_countries(aff, 3)[0] == {"CL", "US"}

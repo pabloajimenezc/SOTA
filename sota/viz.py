@@ -56,12 +56,12 @@ def top_bar(values: pd.Series, n: int = 15, title: str = "") -> go.Figure:
     return hbar(values.value_counts().head(n), title)
 
 
-CHILE_STAR = dict(symbol="star", size=16, color="#D52B1E", line=dict(color="#0039A6", width=1))
+MAX_FLAGS = 400  # images are heavier than markers; beyond this the most cited get a flag
 
 
 def topic_map(df: pd.DataFrame, xy: np.ndarray, color: pd.Series, title: str = "",
-              highlight: pd.Series | None = None) -> go.Figure:
-    """Article map; `highlight` (bool) draws those articles as Chilean-flag stars on top."""
+              highlight: pd.Series | None = None, flag: str | None = None) -> go.Figure:
+    """Article map; `highlight` (bool) articles get a mini flag of country `flag` (ISO code)."""
     d = df.assign(x=xy[:, 0], y=xy[:, 1], grupo=color.astype(str).values,
                   tam=np.log1p(df["article_citation_count"]) + 2)
     fig = px.scatter(d, x="x", y="y", color="grupo", size="tam", size_max=9, title=title,
@@ -71,17 +71,40 @@ def topic_map(df: pd.DataFrame, xy: np.ndarray, color: pd.Series, title: str = "
                                  "article_citation_count": True, "x": False, "y": False, "tam": False},
                      custom_data=["id"], labels={"grupo": ""})
     fig.update_traces(marker=dict(line=dict(width=0), opacity=0.55))
-    if highlight is not None and highlight.any():
-        h = d[highlight.values]
-        fig.add_trace(go.Scatter(
-            x=h["x"], y=h["y"], mode="markers", marker=CHILE_STAR, name=f"★ Autores en Chile ({len(h)})",
-            customdata=h[["id"]].to_numpy(), text=h["document_title"],
-            hovertemplate="<b>%{text}</b><br>★ Autores en Chile<extra></extra>"))
+    if highlight is not None and highlight.any() and flag:
+        h = d[highlight.values].sort_values("article_citation_count", ascending=False)
+        # Transparent markers under the flags keep hover and lasso selection working.
+        fig.add_trace(go.Scatter(x=h["x"], y=h["y"], mode="markers", showlegend=False,
+                                 marker=dict(size=14, color="rgba(0,0,0,0)"), customdata=h[["id"]].to_numpy(),
+                                 text=h["document_title"], hovertemplate="<b>%{text}</b><extra></extra>"))
+        sx, sy = np.ptp(d["x"]) * 0.028, np.ptp(d["y"]) * 0.028
+        fig.update_layout(images=[dict(source=f"https://flagcdn.com/w40/{flag.lower()}.png", xref="x", yref="y",
+                                       x=x, y=y, sizex=sx, sizey=sy, xanchor="center", yanchor="middle",
+                                       sizing="contain", layer="above")
+                                  for x, y in zip(h["x"].head(MAX_FLAGS), h["y"].head(MAX_FLAGS))])
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False)
     _style(fig, height=720)
     # Legend below so the map keeps the full width (many topics, narrow screens).
     fig.update_layout(legend=dict(orientation="h", yanchor="top", y=-0.02, x=0, font=dict(size=10)))
+    return fig
+
+
+def world(inst: pd.DataFrame, country: str = "") -> go.Figure:
+    """Institutions on an OpenStreetMap-based world map; bubble size = articles. customdata[0] = row position."""
+    d = inst.assign(row=np.arange(len(inst)),
+                    grupo=np.where(inst.get("destacado", False), country or "Destacado", "Otros países"))
+    fig = px.scatter_map(d, lat="lat", lon="lon", size="docs", size_max=28, color="grupo",
+                         color_discrete_map={country or "Destacado": "#E11D48", "Otros países": SEQ[0]},
+                         hover_name="institution", custom_data=["row"],
+                         hover_data={"city": True, "country": True, "docs": True, "lat": False, "lon": False,
+                                     "grupo": False, "row": False},
+                         labels={"docs": "artículos", "city": "ciudad", "country": "país", "grupo": ""},
+                         zoom=1.2, center=dict(lat=25, lon=10), map_style="carto-positron")
+    fig.update_traces(marker=dict(opacity=0.7))
+    _style(fig, height=600)
+    fig.update_layout(margin=dict(l=0, r=0, t=10, b=0),
+                      legend=dict(orientation="h", yanchor="bottom", y=0.01, x=0.01, bgcolor="rgba(255,255,255,.8)"))
     return fig
 
 
