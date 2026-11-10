@@ -86,7 +86,27 @@ def _vectors(_df: pd.DataFrame, key: str, synonyms: str) -> text.Vectors:
     return text.vectorize(_df, json.loads(synonyms))
 
 
+@st.cache_resource(max_entries=4, ttl=12 * 3600, show_spinner="Cargando SOTA procesado…")
+def _published_vectors(slug: str, version: str) -> text.Vectors | None:
+    blob = store().load_vectors(slug)
+    return text.unpack_vectors(blob) if blob else None
+
+
+def sota_version(m: dict) -> str:
+    return f"{m.get('created')}:{m.get('bytes')}"
+
+
+def published(df: pd.DataFrame) -> dict | None:
+    """Meta of the opened published SOTA if df is still exactly its articles (nothing removed, same synonyms)."""
+    m = st.session_state.get("sota_meta")
+    if m and m.get("vectors") and len(df) == m["docs"] and rules().synonyms == (m.get("rules") or {}).get("synonyms", {}):
+        return m
+    return None
+
+
 def vectors(df: pd.DataFrame, key: str) -> text.Vectors:
+    if (m := published(df)) and (v := _published_vectors(m["slug"], sota_version(m))) is not None             and len(v.Z) == len(df):
+        return v  # precomputed at publish time
     return _vectors(df, key, json.dumps(rules().synonyms, sort_keys=True))
 
 

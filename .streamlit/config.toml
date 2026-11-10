@@ -8,3 +8,21 @@ gatherUsageStats = false
 
 [server]
 maxUploadSize = 200
+
+[theme]
+base = "light"
+primaryColor = "#1D4ED8"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F2F5FB"
+textColor = "#0B1220"
+linkColor = "#1D4ED8"
+borderColor = "#E3E8F2"
+showWidgetBorder = true
+baseRadius = "0.6rem"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap, sans-serif"
+
+[theme.sidebar]
+backgroundColor = "#0B1A3A"
+secondaryBackgroundColor = "#16295A"
+textColor = "#E7ECF7"
+borderColor = "#22386B"

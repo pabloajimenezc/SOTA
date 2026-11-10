@@ -9,7 +9,8 @@ from sota.cleaning import Rules
 
 RULES_DIR = Path(__file__).resolve().parents[1] / "rules"
 
-st.header("2 · Limpieza")
+st.title("Limpiar")
+st.caption("Quita los artículos que no son del tema. La app los agrupa y te muestra primero los más distintos; cada decisión queda en una regla que puedes reutilizar.")
 raw = require_raw()
 R = rules()
 hist = st.session_state.setdefault("history", [])  # [(attr, values)] for undo
@@ -85,7 +86,7 @@ with st.expander("🔬 Probar un término antes de añadirlo"):
         if hit.any() and st.button("Añadir a términos excluidos"):
             act([("exclude_terms", [t.strip().lower()])], f"Añadido '{t}' ({hit.sum()} eliminados)")
 
-VIEWS = ["Clusters", "Revisión uno a uno", "Eliminados"]
+VIEWS = ["Grupos", "Revisión uno a uno", "Eliminados"]
 view = sticky(st.segmented_control, "Vista", "clean_view", VIEWS[0], options=VIEWS) or VIEWS[0]
 
 
@@ -99,10 +100,10 @@ def term_picker(terms: list[str], wkey: str, scope=None) -> list[str]:
 
 
 # ---------------- Clusters ----------------
-if view == "Clusters":
-    st.caption("Clusters ordenados del más **distinto** al resto (arriba suelen estar los temas ajenos, "
+if view == "Grupos":
+    st.caption("Grupos ordenados del más **distinto** al resto (arriba suelen estar los temas ajenos, "
                "p. ej. medicina por *vessel*). Selecciona uno para inspeccionarlo.")
-    k = sticky(st.number_input, "Número de clusters", "k_clean", text.suggest_k(len(dk)), min_value=2, max_value=60, step=1)
+    k = sticky(st.number_input, "Cantidad de grupos", "k_clean", text.suggest_k(len(dk)), min_value=2, max_value=60, step=1)
     labels = clusters(v, key, k)
     summ = text.cluster_summary(v, labels, dk)
     sel = st.dataframe(summ, hide_index=True, on_select="rerun", selection_mode="single-row", key=f"summ{k}",

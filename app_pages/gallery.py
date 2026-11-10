@@ -2,19 +2,19 @@ import json
 
 import streamlit as st
 
-from app_pages.shared import rules, set_raw, sota_index, sota_load
+from app_pages.shared import rules, set_raw, sota_index, sota_load, sota_version
 from sota.cleaning import Rules
 from sota.store import StoreError
 
-st.header("📚 SOTA publicados")
-st.caption("Estados del arte ya procesados (búsqueda + limpieza). Ábrelos para explorarlos; no necesitas API key.")
+st.title("SOTA publicados")
+st.caption("Estados del arte ya procesados y revisados. Abre uno para explorar sus temas, mapa, autores y tendencias.")
 
 
 def open_sota(m: dict) -> None:
     if st.session_state.get("raw") is not None and "sota_meta" not in st.session_state:
         st.session_state.my_work = {"raw": st.session_state.raw, "rules": rules()}
     try:
-        df = sota_load(m["slug"], f"{m.get('created')}:{m.get('bytes')}")
+        df = sota_load(m["slug"], sota_version(m))
     except StoreError as e:
         st.error(str(e))
         return
@@ -46,10 +46,13 @@ if not shown:
 
 for m in shown:
     with st.container(border=True):
-        c1, c2 = st.columns([5, 1], vertical_alignment="center")
-        c1.markdown(f"**{m['name']}**  \n{m.get('description', '')}")
+        c1, c2 = st.columns([4, 1], vertical_alignment="center")
+        c1.markdown(f"#### {m['name']}")
+        c1.write(m.get("description", ""))
         years = "–".join(map(str, m["years"])) if m.get("years") else "?"
-        c1.caption(f"{m['docs']:,} artículos · {years} · {m.get('author') or 'anónimo'} · "
-                   f"publicado {m.get('created', '?')} · {m.get('bytes', 0) / 1e6:.1f} MB")
+        badges = [f":blue-badge[{m['docs']:,} artículos]", f":gray-badge[{years}]"]
+        if m.get("chile"):
+            badges.append(f":red-badge[★ {m['chile']} con autores en Chile]")
+        c1.markdown(" ".join(badges) + f"  \n:gray[Por {m.get('author') or 'anónimo'} · {m.get('created', '?')}]")
         if c2.button("Abrir", key=f"open_{m['slug']}", type="primary", width="stretch"):
             open_sota(m)

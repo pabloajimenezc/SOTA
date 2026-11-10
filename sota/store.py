@@ -1,4 +1,5 @@
-"""Published SOTAs: one compressed Parquet per SOTA + index.json, stored on a GitHub branch.
+"""Published SOTAs: compressed Parquet (articles, map, topics) + optional .npz with the processed text
+vectors (so opening skips ~30 s of NLP) + index.json, stored on a GitHub branch.
 
 A separate branch (default "sotas") keeps publications from redeploying the app.
 Reads work without a token on a public repo; writes need a token with Contents read/write.
@@ -18,7 +19,7 @@ import requests
 
 from sota.data import COLUMNS
 
-SAVE_COLUMNS = COLUMNS + ["id", "html_url", "query", "x", "y"]
+SAVE_COLUMNS = COLUMNS + ["id", "html_url", "query", "x", "y", "topic"]
 MAX_BYTES = 25_000_000
 
 
@@ -111,7 +112,10 @@ class GitHubStore:
             raise StoreError("Ese SOTA ya no existe.")
         return pd.read_parquet(io.BytesIO(raw))
 
-    def save(self, df: pd.DataFrame, meta: dict) -> None:
+    def load_vectors(self, slug: str) -> bytes | None:
+        return self._read(f"sotas/{slug}.vec.npz")
+
+    def save(self, df: pd.DataFrame, meta: dict, vectors: bytes | None = None) -> None:
         if not self.writable:
             raise StoreError("Publicación deshabilitada: falta configurar el token de GitHub.")
         idx = self.index()
@@ -121,7 +125,11 @@ class GitHubStore:
         blob = pack(df)
         if len(blob) > MAX_BYTES:
             raise StoreError(f"El SOTA ocupa {len(blob) / 1e6:.0f} MB (máximo {MAX_BYTES / 1e6:.0f} MB).")
-        meta = meta | {"bytes": len(blob)}
+        if vectors and len(vectors) > MAX_BYTES:
+            vectors = None  # too big to store: the app recomputes them on open
+        meta = meta | {"bytes": len(blob), "vectors": bool(vectors)}
         self._write(f"sotas/{meta['slug']}.parquet", blob, f"Publish SOTA: {meta['name']}")
+        if vectors:
+            self._write(f"sotas/{meta['slug']}.vec.npz", vectors, f"Vectors: {meta['name']}")
         idx = [m for m in idx if m["slug"] != meta["slug"]] + [meta]
         self._write("index.json", json.dumps(idx, indent=1, ensure_ascii=False).encode(), f"Index: {meta['name']}")

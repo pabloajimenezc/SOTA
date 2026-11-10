@@ -5,7 +5,8 @@ import streamlit as st
 from app_pages.shared import client, csv_bytes, set_raw
 from sota import data, ieee
 
-st.header("1 · Buscar artículos")
+st.title("Buscar artículos")
+st.caption("Escribe tu tema, revisa cuántos artículos hay en IEEE Xplore y descarga los que necesites.")
 if msg := st.session_state.pop("flash", None):
     st.success(msg)
 raw = st.session_state.get("raw")

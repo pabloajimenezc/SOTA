@@ -155,3 +155,14 @@ def test_stable_layouts():
     lab = text.cluster(Z, 4)
     assert (np.diff(np.bincount(lab)) <= 0).all()  # T1 = largest topic
     assert (lab == text.cluster(Z, 4)).all()
+
+
+def test_vectors_roundtrip_and_chile():
+    df = pd.DataFrame({"document_title": [f"ship battery {i}" for i in range(30)],
+                       "abstract": ["electric propulsion converter " * 3, "blood vessel imaging " * 3] * 15, "ieee_terms": "",
+                       "author_keywords": "", "mesh_terms": "",
+                       "author_affiliations": ["Universidad de Chile, Santiago, Chile", "MIT, USA", "Chilean X"] * 10})
+    v = text.vectorize(df)
+    w = text.unpack_vectors(text.pack_vectors(v))
+    assert w.X.shape == v.X.shape and np.allclose(w.embed(["ship"]), v.embed(["ship"]), atol=1e-2)
+    assert data.chile(df).tolist()[:3] == [True, False, False]

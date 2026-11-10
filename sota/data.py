@@ -134,6 +134,11 @@ def split_list(s: pd.Series, sep: str = ";") -> pd.Series:
     return out[(out != "") & (out != "Unknown")]
 
 
+def chile(df: pd.DataFrame) -> pd.Series:
+    """Articles with at least one author affiliated in Chile."""
+    return df["author_affiliations"].fillna("").str.contains(r"(?<![a-z])chile(?![a-z])", case=False, regex=True)
+
+
 def country(affiliation: str) -> str:
     """Heuristic: last comma-separated chunk of an affiliation."""
     part = re.split(r",", affiliation)[-1].strip()

@@ -5,17 +5,19 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from app_pages.shared import (clusters, csv_bytes, reasons, require_raw, rules, sota_index, sticky, store,
-                               subset_key, vectors)
+from app_pages.shared import (clusters, csv_bytes, published, reasons, require_raw, rules, sota_index, sticky,
+                               store, subset_key, vectors)
 from sota import data, text, viz
 from sota.store import StoreError, make_meta, owner_id
 
-st.header("Explorar el estado del arte")
 raw = require_raw()
 meta = st.session_state.get("sota_meta")
 if meta:
-    st.info(f"📚 **{meta['name']}** — {meta.get('description', '')}  \n"
-            f"Publicado por {meta.get('author') or 'anónimo'} el {meta.get('created', '?')}.")
+    st.title(meta["name"])
+    st.caption(f"{meta.get('description', '')}  \nPublicado por **{meta.get('author') or 'anónimo'}** · "
+               f"{meta.get('created', '?')}")
+else:
+    st.title("Tu estado del arte")
 kept = (reasons(raw) == "").to_numpy()
 df = raw[kept].reset_index(drop=True)
 if len(df) < 10:
@@ -77,42 +79,63 @@ def adjust_map(more_space: bool) -> None:
 
 
 with st.sidebar:
-    st.subheader("Tópicos y filtros")
-    k = sticky(st.number_input, "Número de tópicos", "k_topics", meta["k"] if meta else text.suggest_k(len(df)),
-               min_value=2, max_value=60, step=1)
+    st.subheader("Ajustes")
+    k = sticky(st.number_input, "Cantidad de temas", "k_topics", meta["k"] if meta else text.suggest_k(len(df)),
+               min_value=2, max_value=60, step=1,
+               help="En cuántos grandes temas se agrupan los artículos. Más temas = grupos más específicos.")
     years = df["publication_year"].dropna().astype(int)
     yr = st.slider("Años", int(years.min()), int(years.max()), (int(years.min()), int(years.max())))
     df["tipo"] = data.doc_type(df)
-    types = st.multiselect("Tipo", sorted(df["tipo"].unique()), placeholder="Todos")
+    types = st.multiselect("Tipo de publicación", sorted(df["tipo"].unique()), placeholder="Todos")
+    df["chile"] = data.chile(df).values
+    only_cl = st.toggle(f"★ Solo autores en Chile ({int(df['chile'].sum())})",
+                        help="Artículos con al menos un autor afiliado a una institución en Chile.")
 
-labels = clusters(v, key, k)
+pub = published(df)
+if pub and k == pub.get("k") and "topic" in df and df["topic"].notna().all():
+    labels = df["topic"].to_numpy(dtype=int)  # saved at publish time
+else:
+    labels = clusters(v, key, k)
 names = text.topic_names(v, labels)
-df["tópico"] = pd.Series(labels).map(names).values
+df["tema"] = pd.Series(labels).map(names).values
 
 f = df["publication_year"].between(*yr).fillna(False).to_numpy()
 if types:
     f &= df["tipo"].isin(types).to_numpy()
+if only_cl:
+    f &= df["chile"].to_numpy()
 d = df[f]
-st.caption(f"Mostrando **{f.sum():,}** de {len(df):,} artículos limpios.")
+if d.empty:
+    st.warning("Ningún artículo cumple los filtros. Amplía los años o quita filtros.")
+    st.stop()
 
-SECTIONS = ["Resumen", "Tópicos", "Mapa", "Búsqueda", "Autores y fuentes", "Términos", "Datos"]
-# Only the selected section runs (st.tabs would compute all of them, including UMAP).
-sec = sticky(st.segmented_control, "Sección", "explore_view", SECTIONS[0], options=SECTIONS) or SECTIONS[0]
+c = st.columns(5)
+c[0].metric("Artículos", f"{len(d):,}", help=f"De {len(df):,} tras la limpieza.")
+c[1].metric("Desde", f"{yr[0]}")
+c[2].metric("Temas", k)
+c[3].metric("Fuentes", f"{d['publication_title'].nunique():,}", help="Revistas y congresos distintos.")
+c[4].metric("★ Chile", f"{int(d['chile'].sum()):,}", help="Artículos con autores en Chile.")
 
-if sec == "Resumen":
-    c = st.columns(4)
-    c[0].metric("Artículos", f"{len(d):,}")
-    c[1].metric("Años", f"{yr[0]}–{yr[1]}")
-    c[2].metric("Fuentes distintas", f"{d['publication_title'].nunique():,}")
-    c[3].metric("Citas (mediana)", f"{d['article_citation_count'].median():.0f}")
-    st.plotly_chart(viz.per_year(d, d["tipo"], title="Publicaciones por año y tipo"), width="stretch")
-    st.subheader("Más citados")
+LINK = {"html_url": st.column_config.LinkColumn("enlace", display_text="abrir ↗"),
+        "chile": st.column_config.CheckboxColumn("★ Chile"),
+        "document_title": st.column_config.TextColumn("título", width="large"),
+        "publication_year": st.column_config.NumberColumn("año", format="%d"),
+        "publication_title": "revista / congreso", "article_citation_count": "citas"}
+SECTIONS = ["📊 Resumen", "🧭 Temas", "🗺️ Mapa", "🔎 Buscar", "👥 Autores", "📈 Tendencias", "📄 Datos"]
+# Only the selected section runs (st.tabs would compute all of them, including the map).
+sec = sticky(st.segmented_control, "Sección", "explore_view", SECTIONS[0], options=SECTIONS,
+             label_visibility="collapsed") or SECTIONS[0]
+
+if sec == SECTIONS[0]:
+    st.plotly_chart(viz.per_year(d, d["tipo"], title="Publicaciones por año"), width="stretch")
+    st.subheader("Artículos más citados")
     st.dataframe(d.nlargest(20, "article_citation_count")[
-                     ["document_title", "publication_year", "publication_title", "article_citation_count", "html_url"]],
-                 hide_index=True, column_config={"html_url": st.column_config.LinkColumn("link", display_text="abrir")})
+                     ["document_title", "publication_year", "publication_title", "article_citation_count", "chile",
+                      "html_url"]], hide_index=True, column_config=LINK)
 
-elif sec == "Tópicos":
-    st.caption("Haz clic en un cuadro para subdividirlo en subtemas; puedes seguir bajando hasta llegar a un solo artículo.")
+elif sec == SECTIONS[1]:
+    st.caption("Cada cuadro es un tema; su tamaño es la cantidad de artículos. **Haz clic en un cuadro** para "
+               "ver sus subtemas, y así hasta llegar a un artículo.")
     if ss.get("topic_path_k") != k:  # path refers to the current topic count
         ss.topic_path, ss.topic_path_k = [], k
     path = ss.topic_path
@@ -137,22 +160,24 @@ elif sec == "Tópicos":
 
     shown = list(enumerate(trail))[-4:]  # breadcrumb: last levels only
     crumbs = st.columns(5)
-    if crumbs[0].button("🏠 Todos los tópicos", disabled=not path):
+    if crumbs[0].button("🏠 Todos los temas", disabled=not path, width="stretch"):
         path.clear()
         st.rerun()
     for col, (i, code) in zip(crumbs[1:], shown):
-        if col.button(f"› {code}", disabled=i == len(trail) - 1, key=f"crumb_{code}"):
+        if col.button(f"› {code}", disabled=i == len(trail) - 1, key=f"crumb_{code}", width="stretch"):
             del path[i + 1:]
             st.rerun()
 
     if not groups:  # a single article
         row = df.iloc[node[0]]
-        st.markdown(f"#### [{row['document_title']}]({row['html_url']})")
-        st.caption(f"{row['publication_year']} · {row['publication_title']} · {row['article_citation_count']} citas")
-        st.write(row["abstract"])
+        with st.container(border=True):
+            st.markdown(f"#### {'★ ' if row['chile'] else ''}[{row['document_title']}]({row['html_url']})")
+            st.caption(f"{row['publication_year']} · {row['publication_title']} · {row['article_citation_count']} citas"
+                       f"  \n{row['authors']}")
+            st.write(row["abstract"])
     else:
         n_node = sum(map(len, groups))
-        title = f"Tópico {trail[-1]} · {n_node:,} artículos" if trail else f"{k} tópicos · {n_node:,} artículos"
+        title = f"Tema {trail[-1]} · {n_node:,} artículos" if trail else f"{k} temas · {n_node:,} artículos"
         ev = st.plotly_chart(viz.treemap_flat([len(g) for g in groups], codes, tags, title), width="stretch",
                              on_select="rerun", selection_mode="points", key=f"tree_{'.'.join(trail)}_{k}")
         clicked = [p["point_index"] for p in (ev.selection.points if ev else [])]
@@ -164,29 +189,34 @@ elif sec == "Tópicos":
         for c, t, g in zip(codes, tags, groups):
             grp[g] = f"{c}: {t[:40]}"
         dn = df.loc[grp.index].assign(grupo=grp.values)
-        share = st.toggle("Ver como % del año")
-        st.plotly_chart(viz.per_year(dn, dn["grupo"], share, "Evolución de los subtemas" if trail else "Evolución de tópicos"),
-                        width="stretch")
+        c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
+        c1.subheader("¿Cómo evolucionan?")
+        share = c2.toggle("Ver como % de cada año")
+        st.plotly_chart(viz.per_year(dn, dn["grupo"], share), width="stretch")
         top_venues = dn["publication_title"].value_counts().head(12).index
         tv = pd.crosstab(dn["grupo"], dn["publication_title"]).reindex(columns=top_venues)
-        st.plotly_chart(viz.heatmap(tv, "Subtemas × fuentes principales", zlabel="docs"), width="stretch")
+        st.subheader("¿Dónde se publican?")
+        st.plotly_chart(viz.heatmap(tv, zlabel="artículos"), width="stretch")
 
-        st.subheader("Artículo representativo de cada subtema")
+        st.subheader("Un artículo representativo de cada uno")
         rep = []
         for c, t, g in zip(codes, tags, groups):
             i = g[np.argmax(v.Z[g] @ v.Z[g].mean(axis=0))]
-            rep.append({"código": c, "términos": t, "docs": len(g), "representativo": df.at[i, "document_title"],
-                        "año": df.at[i, "publication_year"], "link": df.at[i, "html_url"]})
-        st.dataframe(pd.DataFrame(rep), hide_index=True,
-                     column_config={"link": st.column_config.LinkColumn(display_text="abrir")})
+            rep.append({"tema": c, "palabras clave": t, "artículos": len(g),
+                        "document_title": df.at[i, "document_title"], "publication_year": df.at[i, "publication_year"],
+                        "html_url": df.at[i, "html_url"]})
+        st.dataframe(pd.DataFrame(rep), hide_index=True, column_config=LINK)
 
-elif sec == "Mapa":
-    st.caption("Cada punto es un artículo; cercanía = similitud de contenido. Tamaño = citas. "
-               "Selecciona puntos (lazo/caja) para listarlos.")
+elif sec == SECTIONS[2]:
+    st.caption("Cada punto es un artículo: **los parecidos quedan cerca**. Tamaño = citas. "
+               "★ = autores en Chile. Encierra puntos con el lazo para listarlos.")
     xy = map_xy()
-    color_by = st.radio("Color", ["tópico", "tipo", "década"], horizontal=True)
-    col = (df["publication_year"] // 10 * 10).astype(str) if color_by == "década" else df[color_by]
-    ev = st.plotly_chart(viz.topic_map(d, xy[f], col[f], "Mapa de artículos"),
+    c1, c2 = st.columns([3, 1], vertical_alignment="center")
+    color_by = c1.segmented_control("Colorear por", ["Tema", "Tipo", "Década"], default="Tema")
+    mark_cl = c2.toggle("Destacar ★ Chile", value=True)
+    col = {"Tema": df["tema"], "Tipo": df["tipo"],
+           "Década": (df["publication_year"] // 10 * 10).astype(str)}[color_by or "Tema"]
+    ev = st.plotly_chart(viz.topic_map(d, xy[f], col[f], highlight=d["chile"] if mark_cl else None),
                          width="stretch", on_select="rerun", selection_mode=("lasso", "box"))
     if not ss.get("map_ok"):
         st.write("**¿Cómo se ven los puntos?** El mapa se ajusta con tu respuesta.")
@@ -201,14 +231,16 @@ elif sec == "Mapa":
     pts = ev.selection.points if ev else []
     if pts:
         ids = [p["customdata"][0] for p in pts]
-        st.dataframe(d[d["id"].isin(ids)][["document_title", "publication_year", "tópico", "html_url"]],
-                     hide_index=True, column_config={"html_url": st.column_config.LinkColumn(display_text="abrir")})
+        st.dataframe(d[d["id"].isin(ids)][["document_title", "publication_year", "tema", "chile", "html_url"]],
+                     hide_index=True, column_config=LINK)
 
-elif sec == "Búsqueda":
-    st.caption("Escribe una o varias consultas (una por línea). Se buscan los artículos más similares "
-               "semánticamente y se muestra cómo se reparten entre los tópicos.")
-    qs = [q.strip() for q in st.text_area("Consultas", "modular multilevel converter\nmodel predictive control").splitlines() if q.strip()]
-    n_nb = st.slider("Vecinos por consulta", 10, 200, 50)
+elif sec == SECTIONS[3]:
+    st.caption("Escribe uno o varios temas (uno por línea), en inglés. Encontramos los artículos más parecidos "
+               "y te mostramos en qué temas del SOTA caen.")
+    c1, c2 = st.columns([3, 1])
+    qs = [q.strip() for q in c1.text_area("¿Qué buscas?", "modular multilevel converter\nmodel predictive control",
+                                          height=110).splitlines() if q.strip()]
+    n_nb = c2.number_input("Resultados por búsqueda", 10, 200, 30, step=10)
     if qs:
         sim = text.similar(v, qs)
         sim[:, ~f] = -np.inf
@@ -216,33 +248,39 @@ elif sec == "Búsqueda":
         for q, s in zip(qs, sim):
             top = np.argsort(-s)[:n_nb]
             prof[q] = pd.Series(labels[top]).map(names).value_counts(normalize=True) * 100
-            with st.expander(f"🔎 {q}"):
-                st.dataframe(df.iloc[top][["document_title", "publication_year", "tópico", "html_url"]]
-                             .assign(similitud=s[top].round(3)), hide_index=True,
-                             column_config={"html_url": st.column_config.LinkColumn(display_text="abrir")})
-        st.plotly_chart(viz.heatmap(pd.DataFrame(prof).T.fillna(0), "Perfil temático de cada consulta (% de vecinos)",
-                                    zlabel="%"), width="stretch")
+            with st.expander(f"🔎 {q}", expanded=len(qs) == 1):
+                st.dataframe(df.iloc[top][["document_title", "publication_year", "tema", "chile", "html_url"]]
+                             .assign(parecido=(s[top] * 100).round().astype(int)), hide_index=True,
+                             column_config=LINK | {"parecido": st.column_config.ProgressColumn(
+                                 "parecido", min_value=0, max_value=100, format="%d%%")})
+        st.subheader("¿En qué temas cae cada búsqueda?")
+        st.plotly_chart(viz.heatmap(pd.DataFrame(prof).T.fillna(0), zlabel="% de resultados"), width="stretch")
 
-elif sec == "Autores y fuentes":
+elif sec == SECTIONS[4]:
+    aff = data.split_list(d["author_affiliations"])
     c1, c2 = st.columns(2)
     c1.plotly_chart(viz.top_bar(data.split_list(d["authors"]), title="Autores con más artículos"), width="stretch")
-    c2.plotly_chart(viz.top_bar(d["publication_title"], title="Fuentes principales"), width="stretch")
-    aff = data.split_list(d["author_affiliations"])
-    c1.plotly_chart(viz.top_bar(aff, title="Afiliaciones"), width="stretch")
-    c2.plotly_chart(viz.top_bar(aff.map(data.country), title="Países (aprox., según afiliación)"), width="stretch")
-    st.plotly_chart(viz.citations(d, d["tópico"], "Citas por año de publicación"), width="stretch")
+    c2.plotly_chart(viz.top_bar(d["publication_title"], title="Revistas y congresos principales"), width="stretch")
+    c1.plotly_chart(viz.top_bar(aff, title="Instituciones"), width="stretch")
+    c2.plotly_chart(viz.top_bar(aff.map(data.country), title="Países (según afiliación)"), width="stretch")
+    cl = aff[aff.str.contains(r"(?<![a-z])chile(?![a-z])", case=False, regex=True)]
+    if len(cl):
+        st.plotly_chart(viz.top_bar(cl, title="★ Instituciones en Chile"), width="stretch")
+    st.plotly_chart(viz.citations(d, d["tema"], "Citas según año de publicación"), width="stretch")
 
-elif sec == "Términos":
-    recent = st.slider("Ventana 'reciente' (años)", 2, 10, 5)
+elif sec == SECTIONS[5]:
+    st.caption("Palabras que aparecen cada vez más en los artículos recientes: pistas de hacia dónde va el área.")
+    recent = st.slider("¿Cuántos años cuentan como recientes?", 2, 10, 5)
     em = text.emerging_terms(v.subset(f), d["publication_year"], recent)
-    st.plotly_chart(viz.emerging(em, f"Términos emergentes (últimos {recent} años vs. antes)"), width="stretch")
+    st.plotly_chart(viz.emerging(em, f"Palabras en alza (últimos {recent} años vs. antes)"), width="stretch")
     w = np.asarray(v.X[f].sum(axis=0)).ravel()
-    st.plotly_chart(viz.hbar(pd.Series(w, v.terms).nlargest(25), "Términos con más peso TF-IDF", "Peso TF-IDF"),
-                    width="stretch")
+    st.plotly_chart(viz.hbar(pd.Series(w, v.terms).nlargest(25), "Palabras más características del área",
+                             "Importancia"), width="stretch")
 
-elif sec == "Datos":
-    st.dataframe(d.drop(columns=["id"]), hide_index=True, height=500)
-    st.download_button("⬇️ Descargar (.csv con tópicos)", csv_bytes(d), "sota_topics.csv", "text/csv")
+elif sec == SECTIONS[6]:
+    st.dataframe(d.drop(columns=["id", "x", "y", "topic"], errors="ignore"), hide_index=True, height=520,
+                 column_config=LINK)
+    st.download_button("⬇️ Descargar tabla (.csv)", csv_bytes(d), "sota.csv", "text/csv", type="primary")
 
 if st.session_state.get("api_key"):
     st.divider()
@@ -254,16 +292,17 @@ if st.session_state.get("api_key"):
             name = st.text_input("Nombre", m0.get("name", ""), placeholder="p. ej. Electromovilidad marítima")
             desc = st.text_area("Descripción", m0.get("description", ""))
             author = st.text_input("Autor(es)", m0.get("author", ""))
-            st.caption(f"Se guardan los {len(df):,} artículos limpios, el mapa, la regla de limpieza y el número de "
-                       "tópicos, en Parquet comprimido. Solo tu API key puede volver a publicar con este nombre.")
+            st.caption(f"Se guardan los {len(df):,} artículos limpios ya procesados (mapa, temas y textos), para "
+                       "que abran en segundos. Solo tu API key puede volver a publicar con este nombre.")
             if st.button("Publicar", type="primary", disabled=not name.strip()):
                 xy = map_xy()
-                out = df.assign(x=xy[:, 0], y=xy[:, 1])
+                out = df.assign(x=xy[:, 0], y=xy[:, 1], topic=labels)
                 m = make_meta(out, name, desc, author, owner_id(st.session_state.api_key), k, asdict(rules()))
                 m["map_sep"] = round(ss.map_sep, 3)
+                m["chile"] = int(df["chile"].sum())
                 try:
                     with st.spinner("Publicando…"):
-                        store().save(out, m)
+                        store().save(out, m, text.pack_vectors(v))
                 except StoreError as e:
                     st.error(str(e))
                 else:

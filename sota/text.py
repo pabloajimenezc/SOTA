@@ -1,6 +1,8 @@
 """Text preprocessing, vectorization (TF-IDF + LSA), clustering and search."""
 from __future__ import annotations
 
+import io
+import json
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -56,33 +58,56 @@ def corpus(df: pd.DataFrame, synonyms: dict | None = None) -> list[str]:
     return [clean(t, synonyms) for t in raw]
 
 
+TFIDF_PARAMS = dict(ngram_range=(1, 2), sublinear_tf=True)
+
+
 @dataclass
 class Vectors:
     X: sparse.csr_matrix      # TF-IDF (docs x terms)
     Z: np.ndarray             # LSA embedding, L2-normalized (docs x k)
     terms: np.ndarray
     tfidf: TfidfVectorizer
-    svd: TruncatedSVD
+    components: np.ndarray    # LSA axes (k x terms), to embed new texts
     synonyms: dict
 
     def embed(self, texts: list[str]) -> np.ndarray:
         X = self.tfidf.transform([clean(t, self.synonyms) for t in texts])
-        return normalize(self.svd.transform(X))
+        return normalize(np.asarray(X @ self.components.T, dtype=np.float32))
 
     def subset(self, mask) -> "Vectors":
         idx = np.flatnonzero(mask)
-        return Vectors(self.X[idx], self.Z[idx], self.terms, self.tfidf, self.svd, self.synonyms)
+        return Vectors(self.X[idx], self.Z[idx], self.terms, self.tfidf, self.components, self.synonyms)
 
 
 def vectorize(df: pd.DataFrame, synonyms: dict | None = None, dims: int = 100) -> Vectors:
     texts = corpus(df, synonyms)
     n = len(texts)
-    tfidf = TfidfVectorizer(ngram_range=(1, 2), max_df=0.8, min_df=2 if n < 1000 else 5,
-                            max_features=20000, sublinear_tf=True)
+    tfidf = TfidfVectorizer(max_df=0.8, min_df=2 if n < 1000 else 5, max_features=20000, **TFIDF_PARAMS)
     X = tfidf.fit_transform(texts)
     svd = TruncatedSVD(n_components=max(2, min(dims, X.shape[1] - 1, n - 1)), random_state=0)
     Z = normalize(svd.fit_transform(X))
-    return Vectors(X.tocsr(), Z, tfidf.get_feature_names_out(), tfidf, svd, synonyms or {})
+    return Vectors(X.tocsr(), Z, tfidf.get_feature_names_out(), tfidf, svd.components_, synonyms or {})
+
+
+def pack_vectors(v: Vectors) -> bytes:
+    """Compact, version-independent snapshot (arrays only, no pickled sklearn objects)."""
+    buf = io.BytesIO()
+    X = v.X.tocsr()
+    np.savez_compressed(buf, data=X.data.astype(np.float16), indices=X.indices.astype(np.int32),
+                        indptr=X.indptr.astype(np.int64), shape=np.array(X.shape), Z=v.Z.astype(np.float16),
+                        terms=v.terms.astype(str), idf=v.tfidf.idf_.astype(np.float32),
+                        components=v.components.astype(np.float16), synonyms=np.array(json.dumps(v.synonyms)))
+    return buf.getvalue()
+
+
+def unpack_vectors(blob: bytes) -> Vectors:
+    a = np.load(io.BytesIO(blob))
+    X = sparse.csr_matrix((a["data"].astype(np.float32), a["indices"], a["indptr"]), shape=tuple(a["shape"]))
+    terms = a["terms"]
+    tfidf = TfidfVectorizer(vocabulary=terms.tolist(), **TFIDF_PARAMS).fit(terms[:1].tolist())
+    tfidf.idf_ = a["idf"]
+    return Vectors(X, a["Z"].astype(np.float32), terms, tfidf, a["components"].astype(np.float32),
+                   json.loads(str(a["synonyms"])))
 
 
 def suggest_k(n: int) -> int:

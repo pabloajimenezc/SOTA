@@ -9,7 +9,12 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 TEMPLATE = "plotly_white"
-SEQ = px.colors.qualitative.Safe + px.colors.qualitative.Pastel
+# Vivid but sober categorical palette (first 12 strong, then softer tints).
+SEQ = ["#1D4ED8", "#F59E0B", "#10B981", "#E11D48", "#7C3AED", "#0EA5E9", "#F97316", "#14B8A6",
+       "#DB2777", "#65A30D", "#6366F1", "#CA8A04",
+       "#93C5FD", "#FCD34D", "#6EE7B7", "#FDA4AF", "#C4B5FD", "#7DD3FC", "#FDBA74", "#5EEAD4",
+       "#F9A8D4", "#BEF264", "#A5B4FC", "#FDE68A"]
+INK, GRID = "#0B1220", "#E9EDF5"
 
 
 def _order(values) -> dict:
@@ -19,8 +24,13 @@ def _order(values) -> dict:
 
 
 def _style(fig: go.Figure, height: int = 420) -> go.Figure:
-    fig.update_layout(template=TEMPLATE, height=height, margin=dict(l=10, r=10, t=40, b=10),
-                      legend=dict(font=dict(size=10)), font=dict(family="Arial"))
+    fig.update_layout(template=TEMPLATE, height=height, margin=dict(l=10, r=10, t=48, b=10),
+                      font=dict(family="Inter, Arial, sans-serif", color=INK, size=13),
+                      title=dict(font=dict(size=16, color=INK), x=0, xanchor="left"),
+                      legend=dict(font=dict(size=11), title_text=""), hoverlabel=dict(font_family="Inter, Arial"),
+                      paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    fig.update_xaxes(gridcolor=GRID, zeroline=False)
+    fig.update_yaxes(gridcolor=GRID, zeroline=False)
     return fig
 
 
@@ -38,7 +48,7 @@ def per_year(df: pd.DataFrame, color: pd.Series | None = None, share: bool = Fal
 def hbar(s: pd.Series, title: str = "", xlabel: str = "Publicaciones") -> go.Figure:
     s = s[::-1]
     fig = px.bar(x=s.values, y=s.index.astype(str), orientation="h", title=title, labels={"x": xlabel, "y": ""})
-    fig.update_traces(marker_color="#3b6ea5")
+    fig.update_traces(marker_color=SEQ[0])
     return _style(fig, height=max(300, 24 * len(s) + 80))
 
 
@@ -46,7 +56,12 @@ def top_bar(values: pd.Series, n: int = 15, title: str = "") -> go.Figure:
     return hbar(values.value_counts().head(n), title)
 
 
-def topic_map(df: pd.DataFrame, xy: np.ndarray, color: pd.Series, title: str = "") -> go.Figure:
+CHILE_STAR = dict(symbol="star", size=16, color="#D52B1E", line=dict(color="#0039A6", width=1))
+
+
+def topic_map(df: pd.DataFrame, xy: np.ndarray, color: pd.Series, title: str = "",
+              highlight: pd.Series | None = None) -> go.Figure:
+    """Article map; `highlight` (bool) draws those articles as Chilean-flag stars on top."""
     d = df.assign(x=xy[:, 0], y=xy[:, 1], grupo=color.astype(str).values,
                   tam=np.log1p(df["article_citation_count"]) + 2)
     fig = px.scatter(d, x="x", y="y", color="grupo", size="tam", size_max=9, title=title,
@@ -54,15 +69,24 @@ def topic_map(df: pd.DataFrame, xy: np.ndarray, color: pd.Series, title: str = "
                      hover_name="document_title", color_discrete_sequence=SEQ,
                      hover_data={"publication_year": True, "publication_title": True,
                                  "article_citation_count": True, "x": False, "y": False, "tam": False},
-                     custom_data=["id"])
-    fig.update_traces(marker=dict(line=dict(width=0), opacity=0.6))
+                     custom_data=["id"], labels={"grupo": ""})
+    fig.update_traces(marker=dict(line=dict(width=0), opacity=0.55))
+    if highlight is not None and highlight.any():
+        h = d[highlight.values]
+        fig.add_trace(go.Scatter(
+            x=h["x"], y=h["y"], mode="markers", marker=CHILE_STAR, name=f"★ Autores en Chile ({len(h)})",
+            customdata=h[["id"]].to_numpy(), text=h["document_title"],
+            hovertemplate="<b>%{text}</b><br>★ Autores en Chile<extra></extra>"))
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False)
-    return _style(fig, height=620)
+    _style(fig, height=720)
+    # Legend below so the map keeps the full width (many topics, narrow screens).
+    fig.update_layout(legend=dict(orientation="h", yanchor="top", y=-0.02, x=0, font=dict(size=10)))
+    return fig
 
 
 def heatmap(table: pd.DataFrame, title: str = "", fmt: str = ".0f", zlabel: str = "") -> go.Figure:
-    fig = px.imshow(table, text_auto=fmt, aspect="auto", color_continuous_scale="Viridis", title=title,
+    fig = px.imshow(table, text_auto=fmt, aspect="auto", color_continuous_scale="Blues", title=title,
                     labels=dict(color=zlabel))
     return _style(fig, height=max(350, 28 * len(table) + 120))
 
@@ -135,8 +159,8 @@ def citations(df: pd.DataFrame, color: pd.Series, title: str = "") -> go.Figure:
 def emerging(d: pd.DataFrame, title: str = "") -> go.Figure:
     d = d.iloc[::-1]
     fig = go.Figure([
-        go.Bar(y=d["término"], x=d["antes"], name="Antes", orientation="h", marker_color="#b0bec5"),
-        go.Bar(y=d["término"], x=d["reciente"], name="Reciente", orientation="h", marker_color="#e4572e"),
+        go.Bar(y=d["término"], x=d["antes"], name="Antes", orientation="h", marker_color="#CBD5E1"),
+        go.Bar(y=d["término"], x=d["reciente"], name="Reciente", orientation="h", marker_color=SEQ[0]),
     ])
     fig.update_layout(barmode="group", title=title, xaxis_title="% de documentos que lo mencionan")
     return _style(fig, height=max(350, 30 * len(d) + 100))
