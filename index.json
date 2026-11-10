@@ -79,8 +79,10 @@
    },
    "min_year": null
   },
-  "bytes": 4646333,
-  "map_sep": 0.5
+  "bytes": 4696996,
+  "map_sep": 0.5,
+  "vectors": true,
+  "chile": 27
  },
  {
   "slug": "modular-multilevel-cascaded-converters",
@@ -107,7 +109,9 @@
    "synonyms": {},
    "min_year": null
   },
-  "bytes": 6345688,
-  "map_sep": 0.5
+  "bytes": 6425582,
+  "map_sep": 0.5,
+  "vectors": true,
+  "chile": 311
  }
 ]
