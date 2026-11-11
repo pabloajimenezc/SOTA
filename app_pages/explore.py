@@ -95,7 +95,7 @@ with st.sidebar:
     aff = affiliations(df, key)
     doc_iso = geo.article_countries(aff, len(df))
     per_country = pd.Series([c for cs in doc_iso for c in cs]).value_counts()
-    isos = sorted(per_country.index, key=lambda c: geo.norm(geo.country_name(c)))  # alphabetical, accent-insensitive
+    isos = sorted(per_country.index, key=lambda c: geo.es_key(geo.country_name(c)))  # Spanish alphabetical order
     iso = st.selectbox("País destacado", isos, index=isos.index("CL") if "CL" in isos else None,
                        format_func=lambda c: f"{geo.country_name(c)} ({per_country[c]:,})", placeholder="Ninguno",
                        help="Sus artículos se marcan con su bandera en el mapa. Según la afiliación de los autores.")

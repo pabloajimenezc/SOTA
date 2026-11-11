@@ -182,4 +182,6 @@ def test_geo_affiliations():
     aff = geo.affiliations(df)
     inst = geo.institutions(aff)
     assert inst.iloc[0]["institution"] == "Universidad de Chile" and inst.iloc[0]["docs"] == 2
-    assert geo.country_counts(aff)["Chile"] == 2 and geo.article_countries(aff, 3)[0] == {"CL", "US"}
+    assert geo.country_counts(aff)["Chile"] == 2 and geo.country_name("DE") == "Alemania"
+    assert geo.parse("Universidad de Sevilla, Sevilla, España")[2] == "ES"
+    assert sorted(["Nueva Zelanda", "Níger", "Ñandú", "Nigeria"], key=geo.es_key) == ["Níger", "Nigeria", "Nueva Zelanda", "Ñandú"] and geo.article_countries(aff, 3)[0] == {"CL", "US"}

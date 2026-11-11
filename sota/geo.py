@@ -53,7 +53,9 @@ def countries() -> pd.DataFrame:
 
 @lru_cache(maxsize=1)
 def _country_lookup() -> dict[str, str]:
-    lut = {norm(n): iso for iso, n in countries()["name"].items()}
+    c = countries()
+    # English (GeoNames) and Spanish (CLDR) names, so "Spain" and "España" both work.
+    lut = {norm(n): iso for col in ("es", "name") for iso, n in c[col].items()}
     return lut | ALIASES
 
 
@@ -64,7 +66,14 @@ def _cities() -> dict[tuple[str, str], tuple[float, float]]:
 
 
 def country_name(iso: str) -> str:
-    return countries()["name"].get(iso, iso)
+    """Spanish name (CLDR)."""
+    return countries()["es"].get(iso, iso)
+
+
+def es_key(s: str) -> str:
+    """Sort key for Spanish alphabetical order: accents ignored, ñ right after n."""
+    s = s.lower().replace("ñ", "n{")  # "{" sorts after "z"
+    return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
 
 
 def flag_url(iso: str, width: int = 40) -> str:
