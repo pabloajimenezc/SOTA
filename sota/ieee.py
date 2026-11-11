@@ -27,12 +27,53 @@ PAGE = 200  # API maximum per call
 
 CONTENT_TYPES = ["Journals", "Conferences", "Early Access", "Magazines", "Books", "Standards", "Courses"]
 
-SEARCH_FIELDS = {
-    "Todos los metadatos": "querytext",
-    "Abstract": "abstract",
-    "Título": "article_title",
-    "Index terms": "index_terms",
+# Advanced Search fields (label -> IEEE command-search data field, verified against the live API).
+FIELDS = {
+    "Todos los metadatos": "All Metadata",
+    "Título del documento": "Document Title",
+    "Abstract": "Abstract",
+    "Términos de índice": "Index Terms",
+    "Palabras clave del autor": "Author Keywords",
+    "Autores": "Authors",
+    "Afiliaciones": "Author Affiliations",
+    "Título de publicación": "Publication Title",
 }
+OPERATORS = ["AND", "OR", "NOT"]
+_TOKEN = re.compile(r'"[^"]*"|\(|\)|[^\s()"]+')
+
+
+def qualify(text: str, field: str) -> str:
+    """'submarine OR "underwater vehicle"' -> '"Abstract":submarine OR "Abstract":"underwater vehicle"'.
+
+    IEEE applies a field only to the term right after it, so every term gets its own prefix.
+    Terms written side by side are joined with AND (IEEE's default).
+    """
+    out, prev_term = [], False
+    for tok in _TOKEN.findall(text):
+        if tok.upper() in OPERATORS:
+            out.append(tok.upper())
+            prev_term = False
+            continue
+        is_term = tok not in "()"
+        if prev_term and tok != ")":
+            out.append("AND")
+        out.append(f'"{field}":{tok}' if is_term else tok)
+        prev_term = tok != "("
+    return " ".join(out).replace("( ", "(").replace(" )", ")")
+
+
+def build_query(rows: list[tuple[str, str, str]]) -> str:
+    """IEEE Advanced Search rows [(operator, terms, field label)] -> command-search query.
+
+    Rows combine left to right, as they read on screen: A AND B OR C = (A AND B) OR C.
+    """
+    parts = [(op, f"({qualify(t, FIELDS[f])})") for op, t, f in rows if t.strip()]
+    if not parts:
+        return ""
+    q = parts[0][1]
+    for i, (op, p) in enumerate(parts[1:]):
+        q = f"{q} {op} {p}" if i == 0 or op == parts[i][0] else f"({q}) {op} {p}"
+    return q
 
 # label -> (sort key, API params)
 SORTS = {

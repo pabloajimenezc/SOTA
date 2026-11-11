@@ -12,26 +12,70 @@ if msg := st.session_state.pop("flash", None):
 raw = st.session_state.get("raw")
 year_now = dt.date.today().year
 
+
+
+def advanced_rows() -> str:
+    """IEEE-style Advanced Search: one row per term, joined with AND/OR/NOT. Survives page switches."""
+    rows = st.session_state.setdefault("adv_rows", [["AND", "", "Todos los metadatos"] for _ in range(3)])
+    fields, drop = list(ieee.FIELDS), None
+    for i, row in enumerate(rows):
+        c0, c1, c2, c3 = st.columns([1.1, 4, 2.2, 0.5], vertical_alignment="bottom")
+        for k, v in zip(("op", "t", "f"), row):  # re-seed widgets after a page switch or row removal
+            st.session_state.setdefault(f"_adv_{k}{i}", v)
+        if i == 0:
+            c0.markdown("**Buscar**")
+        else:
+            row[0] = c0.selectbox("Operador", ieee.OPERATORS, key=f"_adv_op{i}", label_visibility="collapsed")
+        row[1] = c1.text_input("Término", key=f"_adv_t{i}", label_visibility="collapsed",
+                               placeholder="Término, p. ej. submarine OR AUV OR \"underwater vehicle\"" if i == 0
+                               else "Término")
+        row[2] = c2.selectbox("Campo", fields, key=f"_adv_f{i}", label_visibility="collapsed")
+        if i and c3.button("", key=f"_adv_x{i}", icon=":material/close:", help="Quitar fila"):
+            drop = i
+    if st.button("Agregar fila", icon=":material/add:", type="tertiary"):
+        rows.append(["AND", "", "Todos los metadatos"])
+        st.rerun()
+    if drop is not None:
+        rows.pop(drop)
+        for k in [k for k in st.session_state if str(k).startswith("_adv_")]:
+            del st.session_state[k]
+        st.rerun()
+    st.caption('En cada fila puedes usar OR, AND, NOT, comillas para frases ("fast charging") y comodín * '
+               "(submarin*). El campo se aplica a todos los términos de la fila.")
+    return ieee.build_query([tuple(r) for r in rows])
+
+
 tab_api, tab_csv = st.tabs(["IEEE Xplore API", "Subir CSV"])
 
 with tab_api:
     if not st.session_state.api_key:
         st.info("Ingresaste sin API key. Cierra sesión e ingresa con tu key para buscar, o usa **Subir CSV**.")
     else:
-        with st.form("query"):
-            q_text = st.text_input(
-                "Tema de investigación",
-                placeholder='("Abstract":"ship*" OR "Abstract":"vessel*") AND "Abstract":"propulsion"',
-                help="Admite la sintaxis de IEEE Xplore: AND, OR, NOT, comillas, comodín *.")
-            c1, c2, c3 = st.columns([1, 2, 2])
-            field = c1.selectbox("Buscar en", list(ieee.SEARCH_FIELDS))
+        mode = st.segmented_control("Modo", ["Búsqueda avanzada", "Comando"], default="Búsqueda avanzada",
+                                    key="q_mode", label_visibility="collapsed") or "Búsqueda avanzada"
+        if mode == "Búsqueda avanzada":
+            q_text = advanced_rows()
+            if q_text:
+                st.caption("Consulta generada (puedes copiarla al modo Comando para afinarla):")
+                st.code(q_text, language=None, wrap_lines=True)
+        else:
+            st.session_state.setdefault("_w_q_cmd", st.session_state.get("q_cmd", ""))
+            q_text = st.session_state.q_cmd = st.text_area(
+                "Consulta", key="_w_q_cmd", height=110,
+                placeholder='("Abstract":submarine OR "Abstract":AUV) AND ("All Metadata":charging)',
+                help="Sintaxis de Command Search de IEEE Xplore: AND, OR, NOT, paréntesis, comillas para frases, "
+                     'comodín * y campos como "Abstract":término.')
+        with st.form("filters", border=False):
+            c2, c3, c4 = st.columns([2, 2, 1], vertical_alignment="bottom")
             types = c2.multiselect("Tipo de documento", ieee.CONTENT_TYPES, placeholder="Todos")
             years = c3.slider("Años", 1950, year_now + 1, (1950, year_now + 1))
-            oa = st.checkbox("Solo Open Access")
-            count_clicked = st.form_submit_button("Contar artículos", type="primary")
+            oa = c4.checkbox("Solo Open Access")
+            count_clicked = st.form_submit_button("Contar artículos", type="primary", icon=":material/search:")
 
+        if count_clicked and not q_text.strip():
+            st.warning("Escribe al menos un término.")
         if count_clicked and q_text.strip():
-            q = ieee.Query(q_text.strip(), ieee.SEARCH_FIELDS[field],
+            q = ieee.Query(q_text.strip(), "querytext",
                            years[0] if years[0] > 1950 else None,
                            years[1] if years[1] <= year_now else None, oa)
             try:

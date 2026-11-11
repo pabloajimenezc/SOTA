@@ -185,3 +185,14 @@ def test_geo_affiliations():
     assert geo.country_counts(aff)["Chile"] == 2 and geo.country_name("DE") == "Alemania"
     assert geo.parse("Universidad de Sevilla, Sevilla, España")[2] == "ES"
     assert sorted(["Nueva Zelanda", "Níger", "Ñandú", "Nigeria"], key=geo.es_key) == ["Níger", "Nigeria", "Nueva Zelanda", "Ñandú"] and geo.article_countries(aff, 3)[0] == {"CL", "US"}
+
+
+def test_advanced_search_rows():
+    assert ieee.qualify("submarine OR AUV", "Abstract") == '"Abstract":submarine OR "Abstract":AUV'
+    assert ieee.qualify("electric ship", "Abstract") == '"Abstract":electric AND "Abstract":ship'
+    assert ieee.qualify('(a or "b c") not d*', "X") == '("X":a OR "X":"b c") NOT "X":d*'
+    q = ieee.build_query([("NOT", "submarine OR AUV", "Abstract"), ("AND", "charging", "Todos los metadatos"),
+                          ("OR", "  ", "Abstract"), ("NOT", "cable", "Título del documento")])
+    assert q == ('(("Abstract":submarine OR "Abstract":AUV) AND ("All Metadata":charging)) '
+                 'NOT ("Document Title":cable)')
+    assert ieee.build_query([("AND", "", "Abstract")]) == ""
